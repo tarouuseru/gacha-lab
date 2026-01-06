@@ -4,7 +4,7 @@ const supabaseClient = window.supabase.createClient(
   config.SUPABASE_ANON_KEY
 );
 const SPIN_API_URL = `https://gacha-mvp.glab-74.workers.dev/api/spin?gacha_id=${encodeURIComponent(
-  config.GACHA_ID
+  window.APP_CONFIG.GACHA_ID
 )}`;
 const LAST_SPIN_URL = `${config.API_BASE}/api/last-spin`;
 const TRACK_API_URL = "https://gacha-mvp.glab-74.workers.dev/api/track";
@@ -138,7 +138,7 @@ async function trackPaywallClick(reason) {
       body: JSON.stringify({
         event_name: "paywall_cta_click",
         reason,
-        gacha_id: config.GACHA_ID,
+        gacha_id: window.APP_CONFIG.GACHA_ID,
       }),
     });
   } catch {
@@ -160,7 +160,7 @@ async function spin() {
     method: "POST",
     headers,
     credentials: "include",
-    body: JSON.stringify({ gacha_id: config.GACHA_ID }),
+    body: JSON.stringify({ gacha_id: window.APP_CONFIG.GACHA_ID }),
   });
 
   if (!response.ok) {

@@ -98,6 +98,14 @@
       </section>
       <section class="card admin-grid">
         <div class="admin-actions">
+          <button class="btn" id="saveGachaId">gacha_id save</button>
+          <button class="btn secondary" id="testSpin">spin test</button>
+        </div>
+        <div id="spinStatus" class="admin-status"></div>
+        <pre id="spinResult" class="admin-status"></pre>
+      </section>
+      <section class="card admin-grid">
+        <div class="admin-actions">
           <button class="btn" id="loadPrizes">prizes load</button>
         </div>
         <div id="prizeStatus" class="admin-status"></div>
@@ -114,6 +122,8 @@
       const gachaStatus = document.getElementById("gachaStatus");
       const prizeStatus = document.getElementById("prizeStatus");
       const prizeList = document.getElementById("prizeList");
+      const spinStatus = document.getElementById("spinStatus");
+      const spinResult = document.getElementById("spinResult");
 
       const storageKeys = {
         apiBase: "admin_api_base",
@@ -277,9 +287,42 @@
         }
       }
 
+      async function saveGachaIdOnly() {
+        saveDefaults();
+        spinStatus.textContent = "saved";
+      }
+
+      async function testSpin() {
+        saveDefaults();
+        spinStatus.textContent = "testing...";
+        spinResult.textContent = "";
+        const gachaId = gachaIdInput.value.trim();
+        if (!gachaId) {
+          spinStatus.textContent = "gacha_id required";
+          return;
+        }
+        try {
+          const res = await fetch(
+            apiUrl(`/api/spin?gacha_id=${encodeURIComponent(gachaId)}`),
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+            }
+          );
+          const text = await res.text();
+          spinStatus.textContent = `status: ${res.status}`;
+          spinResult.textContent = text;
+        } catch {
+          spinStatus.textContent = "spin failed";
+        }
+      }
+
       document.getElementById("loadGacha").addEventListener("click", loadGacha);
       document.getElementById("saveGacha").addEventListener("click", saveGacha);
       document.getElementById("loadPrizes").addEventListener("click", loadPrizes);
+      document.getElementById("saveGachaId").addEventListener("click", saveGachaIdOnly);
+      document.getElementById("testSpin").addEventListener("click", testSpin);
 
       loadDefaults();
     </script>
