@@ -82,7 +82,6 @@ Cloudflare Pages → Build settings
 python -m http.server 8080
 ```
 `http://localhost:8080/pages/index.html` を開き、Network で `styles.css` / `app.js` / `config.js` が 200 を確認
-
 ## 動作確認手順
 
 1. 未ログインで `index.html` を開き、1回「回す」

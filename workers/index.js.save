@@ -1,16 +1,5 @@
 const JSON_HEADERS = { "Content-Type": "application/json" };
-const FIXED_ORIGIN = "https://gacha-lab-pages.pages.dev";
 const DEPLOY_ID = "2026-01-04T21:15JST";
-
-function resolveAllowedOrigin(requestOrigin, allowlist) {
-  const allowed = (allowlist || "")
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-  if (!requestOrigin) return allowed[0] || "";
-  if (allowed.includes(requestOrigin)) return requestOrigin;
-  return allowed[0] || "";
-}
 
 function corsHeaders(origin) {
   return {
@@ -100,62 +89,35 @@ async function getGacha(env, gachaId) {
   return data[0] || null;
 }
 
-async function fetchPrizes(env, gachaId) {
-  const res = await supabaseRest(env, "/rest/v1/prizes", {
-    query: `?select=id,name,image_url,stock,weight&gacha_id=eq.${encodeURIComponent(
-      gachaId
-    )}&is_active=is.true&stock=gt.0`,
-  });
-  if (!res.ok) return null;
-  return res.json();
-}
-
-function chooseWeightedPrize(prizes) {
-  const weighted = prizes.map((prize) => ({
-    prize,
-    weight: Math.max(1, Number(prize.weight) || 1),
-  }));
-  const total = weighted.reduce((sum, item) => sum + item.weight, 0);
-  let pick = Math.random() * total;
-  for (const item of weighted) {
-    pick -= item.weight;
-    if (pick < 0) return item.prize;
-  }
-  return weighted[weighted.length - 1]?.prize || null;
-}
-
-async function decrementPrizeStock(env, prize) {
-  const res = await supabaseRest(env, "/rest/v1/prizes", {
-    method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      Prefer: "return=representation",
-    },
-    query: `?id=eq.${encodeURIComponent(prize.id)}&stock=gt.0`,
-    body: JSON.stringify({ stock: prize.stock - 1 }),
-  });
-  if (!res.ok) return null;
-  const data = await res.json();
-  return data?.length ? data[0] : null;
-}
-
-async function createRedeemWin(env, gachaId, prizeId) {
-  const res = await supabaseRest(env, "/rest/v1/redeems", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Prefer: "return=representation",
-    },
-    body: JSON.stringify({
+async function createRedeem(env, gachaId, { userId, guestHash }) {
+  const letters = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+  const digits = "23456789";
+  for (let i = 0; i < 5; i += 1) {
+    const code = `${randomString(4, letters)}-${randomString(4, digits)}`;
+    const issuedAt = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 30).toISOString();
+    const payload = {
       gacha_id: gachaId,
-      prize_id: prizeId,
-      result: "WIN",
-      created_at: new Date().toISOString(),
-    }),
-  });
-  if (!res.ok) return null;
-  const data = await res.json();
-  return data?.[0] || null;
+      user_id: userId || null,
+      guest_token_hash: guestHash || null,
+      redeem_code: code,
+      status: "ISSUED",
+      issued_at: issuedAt,
+      expires_at: expiresAt,
+    };
+    const res = await supabaseRest(env, "/rest/v1/redeems", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Prefer: "return=representation",
+      },
+      body: JSON.stringify(payload),
+    });
+    if (res.ok) {
+      return code;
+    }
+  }
+  return null;
 }
 
 function jsonResponse(body, { status = 200, headers = {}, setCookie } = {}) {
@@ -179,19 +141,10 @@ function ensureSupabaseEnv(env, headers) {
   return null;
 }
 
-function authorizeAdmin(request, env, headers) {
-  const authHeader = request.headers.get("Authorization") || "";
-  const token = authHeader.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : "";
-  if (!token || token !== env.ADMIN_TOKEN) {
-    return jsonResponse({ error: "UNAUTHORIZED" }, { status: 401, headers });
-  }
-  return null;
-}
-
 async function handleSpin(request, env) {
-  const allowOrigin = FIXED_ORIGIN;
+  const origin = request.headers.get("Origin") || env.ALLOWED_ORIGIN;
   const baseHeaders = {
-    ...corsHeaders(allowOrigin),
+    ...corsHeaders(env.ALLOWED_ORIGIN || origin),
     "X-Worker-Deploy": DEPLOY_ID,
   };
 
@@ -263,17 +216,8 @@ async function handleSpin(request, env) {
   console.log("spin received", { gacha_id: gachaId, source: gachaSource });
   const gacha = await getGacha(env, gachaId);
   console.log("gacha lookup", { found: !!gacha, gacha_id: gachaId });
-  if (!gacha) {
-    return jsonResponse(
-      { status: "ERROR", code: "GACHA_NOT_FOUND" },
-      { status: 404, headers: baseHeaders }
-    );
-  }
-  if (!gacha.is_active) {
-    return jsonResponse(
-      { status: "ERROR", code: "GACHA_INACTIVE" },
-      { status: 200, headers: baseHeaders }
-    );
+  if (!gacha || !gacha.is_active) {
+    return jsonResponse({ error: "GACHA_NOT_FOUND" }, { status: 404, headers: baseHeaders });
   }
 
   const authHeader = request.headers.get("Authorization") || "";
@@ -396,48 +340,17 @@ async function handleSpin(request, env) {
     }
   }
 
-  const winRate = clampRate(gacha.win_rate == null ? 0.1 : gacha.win_rate);
+  const winRate = clampRate(gacha.win_rate);
   const isWin = winRate > 0 && Math.random() < winRate;
-  let result = isWin ? "WIN" : "LOSE";
-  let redeem = null;
+  const result = isWin ? "WIN" : "LOSE";
 
+  let redeem = null;
   if (result === "WIN") {
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      const prizes = await fetchPrizes(env, gachaId);
-      if (!prizes || prizes.length === 0) {
-        result = "LOSE";
-        redeem = null;
-        break;
-      }
-      const prize = chooseWeightedPrize(prizes);
-      if (!prize) {
-        result = "LOSE";
-        redeem = null;
-        break;
-      }
-      const updated = await decrementPrizeStock(env, prize);
-      if (!updated) {
-        continue;
-      }
-      const redeemRow = await createRedeemWin(env, gachaId, prize.id);
-      if (!redeemRow) {
-        console.error("redeem insert failed");
-        redeem = null;
-      } else {
-        redeem = {
-          redeem_id: redeemRow.id,
-          prize: {
-            id: prize.id,
-            name: prize.name,
-            image_url: prize.image_url || null,
-          },
-        };
-      }
-      break;
-    }
-    if (!redeem) {
-      result = "LOSE";
-    }
+    const code = await createRedeem(env, gachaId, {
+      userId: userId || null,
+      guestHash: userId ? null : guestHash,
+    });
+    if (code) redeem = { code };
   }
 
   const spinRes = await supabaseRest(env, "/rest/v1/spins", {
@@ -456,18 +369,20 @@ async function handleSpin(request, env) {
     console.error("spin save failed", await spinRes.text());
   }
 
-  const responseBody = {
-    status: "SPUN",
-    result,
-    redeem: result === "WIN" ? redeem : null,
-    debug: { contentType, bodyLen },
-  };
-  return jsonResponse(responseBody, { status: 200, headers: baseHeaders, setCookie });
+  return jsonResponse(
+    {
+      status: "SPUN",
+      result,
+      redeem,
+      debug: { contentType, bodyLen },
+    },
+    { status: 200, headers: baseHeaders, setCookie }
+  );
 }
 
 async function handleMe(request, env) {
-  const allowOrigin = FIXED_ORIGIN;
-  const baseHeaders = corsHeaders(allowOrigin);
+  const origin = request.headers.get("Origin") || env.ALLOWED_ORIGIN;
+  const baseHeaders = corsHeaders(env.ALLOWED_ORIGIN || origin);
 
   const envError = ensureSupabaseEnv(env, baseHeaders);
   if (envError) return envError;
@@ -493,8 +408,8 @@ async function handleMe(request, env) {
 }
 
 async function handleClaimGuest(request, env) {
-  const allowOrigin = FIXED_ORIGIN;
-  const baseHeaders = corsHeaders(allowOrigin);
+  const origin = request.headers.get("Origin") || env.ALLOWED_ORIGIN;
+  const baseHeaders = corsHeaders(env.ALLOWED_ORIGIN || origin);
 
   const envError = ensureSupabaseEnv(env, baseHeaders);
   if (envError) return envError;
@@ -533,8 +448,8 @@ async function handleClaimGuest(request, env) {
 }
 
 async function handleLastSpin(request, env) {
-  const allowOrigin = FIXED_ORIGIN;
-  const baseHeaders = corsHeaders(allowOrigin);
+  const origin = request.headers.get("Origin") || env.ALLOWED_ORIGIN;
+  const baseHeaders = corsHeaders(env.ALLOWED_ORIGIN || origin);
 
   const envError = ensureSupabaseEnv(env, baseHeaders);
   if (envError) return envError;
@@ -591,8 +506,8 @@ async function handleLastSpin(request, env) {
 }
 
 async function handleTrack(request, env) {
-  const allowOrigin = FIXED_ORIGIN;
-  const baseHeaders = corsHeaders(allowOrigin);
+  const origin = request.headers.get("Origin") || env.ALLOWED_ORIGIN;
+  const baseHeaders = corsHeaders(env.ALLOWED_ORIGIN || origin);
 
   const envError = ensureSupabaseEnv(env, baseHeaders);
   if (envError) return envError;
@@ -652,107 +567,13 @@ async function handleTrack(request, env) {
 
 export default {
   async fetch(request, env) {
-    const allowOrigin = FIXED_ORIGIN;
+    const url = new URL(request.url);
 
     if (request.method === "OPTIONS") {
       return new Response(null, {
         status: 204,
-        headers: { ...corsHeaders(allowOrigin), ...JSON_HEADERS },
+        headers: corsHeaders(env.ALLOWED_ORIGIN || ""),
       });
-    }
-
-    const url = new URL(request.url);
-    if (url.pathname.startsWith("/api/admin/")) {
-      const baseHeaders = corsHeaders(allowOrigin);
-      const envError = ensureSupabaseEnv(env, baseHeaders);
-      if (envError) return envError;
-      const authError = authorizeAdmin(request, env, baseHeaders);
-      if (authError) return authError;
-
-      const segments = url.pathname.split("/").filter(Boolean);
-      if (segments[2] === "gachas" && segments[3]) {
-        const gachaId = segments[3];
-        if (segments.length === 4 && request.method === "GET") {
-          const res = await supabaseRest(env, "/rest/v1/gachas", {
-            query: `?select=id,win_rate,is_active&id=eq.${encodeURIComponent(gachaId)}&limit=1`,
-          });
-          if (!res.ok) {
-            return jsonResponse({ error: "GACHA_LOOKUP_FAILED" }, { status: 500, headers: baseHeaders });
-          }
-          const data = await res.json();
-          if (!data?.length) {
-            return jsonResponse({ error: "NOT_FOUND" }, { status: 404, headers: baseHeaders });
-          }
-          return jsonResponse(data[0], { status: 200, headers: baseHeaders });
-        }
-        if (segments.length === 4 && request.method === "PATCH") {
-          let payload = {};
-          try {
-            payload = await request.json();
-          } catch {
-            return jsonResponse({ error: "INVALID_JSON" }, { status: 400, headers: baseHeaders });
-          }
-          const update = {};
-          if (payload.win_rate !== undefined) update.win_rate = payload.win_rate;
-          if (payload.is_active !== undefined) update.is_active = payload.is_active;
-          if (Object.keys(update).length === 0) {
-            return jsonResponse({ error: "NO_FIELDS" }, { status: 400, headers: baseHeaders });
-          }
-          const res = await supabaseRest(env, "/rest/v1/gachas", {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json", Prefer: "return=representation" },
-            query: `?id=eq.${encodeURIComponent(gachaId)}`,
-            body: JSON.stringify(update),
-          });
-          if (!res.ok) {
-            return jsonResponse({ error: "GACHA_UPDATE_FAILED" }, { status: 500, headers: baseHeaders });
-          }
-          const data = await res.json();
-          return jsonResponse(data[0] || {}, { status: 200, headers: baseHeaders });
-        }
-        if (segments.length === 5 && segments[4] === "prizes" && request.method === "GET") {
-          const res = await supabaseRest(env, "/rest/v1/prizes", {
-            query: `?select=id,name,stock,weight,is_active,image_url&gacha_id=eq.${encodeURIComponent(
-              gachaId
-            )}&order=created_at.desc`,
-          });
-          if (!res.ok) {
-            return jsonResponse({ error: "PRIZES_LOOKUP_FAILED" }, { status: 500, headers: baseHeaders });
-          }
-          const data = await res.json();
-          return jsonResponse({ items: data }, { status: 200, headers: baseHeaders });
-        }
-      }
-
-      if (segments[2] === "prizes" && segments[3] && request.method === "PATCH") {
-        const prizeId = segments[3];
-        let payload = {};
-        try {
-          payload = await request.json();
-        } catch {
-          return jsonResponse({ error: "INVALID_JSON" }, { status: 400, headers: baseHeaders });
-        }
-        const update = {};
-        if (payload.name !== undefined) update.name = payload.name;
-        if (payload.stock !== undefined) update.stock = payload.stock;
-        if (payload.weight !== undefined) update.weight = payload.weight;
-        if (payload.is_active !== undefined) update.is_active = payload.is_active;
-        if (payload.image_url !== undefined) update.image_url = payload.image_url;
-        if (Object.keys(update).length === 0) {
-          return jsonResponse({ error: "NO_FIELDS" }, { status: 400, headers: baseHeaders });
-        }
-        const res = await supabaseRest(env, "/rest/v1/prizes", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json", Prefer: "return=representation" },
-          query: `?id=eq.${encodeURIComponent(prizeId)}`,
-          body: JSON.stringify(update),
-        });
-        if (!res.ok) {
-          return jsonResponse({ error: "PRIZE_UPDATE_FAILED" }, { status: 500, headers: baseHeaders });
-        }
-        const data = await res.json();
-        return jsonResponse(data[0] || {}, { status: 200, headers: baseHeaders });
-      }
     }
 
     if (url.pathname === "/api/spin") {
@@ -761,7 +582,7 @@ export default {
       }
       return jsonResponse(
         { error: "METHOD_NOT_ALLOWED" },
-        { status: 405, headers: corsHeaders(allowOrigin) }
+        { status: 405, headers: corsHeaders(env.ALLOWED_ORIGIN || "") }
       );
     }
 
@@ -781,6 +602,6 @@ export default {
       return handleTrack(request, env);
     }
 
-    return jsonResponse({ error: "NOT_FOUND" }, { status: 404, headers: corsHeaders(allowOrigin) });
+    return jsonResponse({ error: "NOT_FOUND" }, { status: 404, headers: corsHeaders(env.ALLOWED_ORIGIN || "") });
   },
 };
