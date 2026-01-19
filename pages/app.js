@@ -256,8 +256,9 @@ async function spin(options = { mode: "first" }) {
     window.localStorage.removeItem("can_second_spin");
   }
   renderSpinResult(data, token, mode);
-  if (freeResultNeedLogin && mode === "first") {
-    openModal(loginModal);
+  if (freeResultNeedLogin && mode === "first" && resultCta) {
+    resultCta.innerHTML = `<button class="btn" data-action="open-login">続きへ進む</button>
+      <div class="small">ログインが必要です</div>`;
   }
 
   if (spinButton) spinButton.disabled = false;
@@ -381,6 +382,9 @@ resultCta?.addEventListener("click", (event) => {
   const target = event.target;
   if (target && target.matches("[data-action='spin-again']")) {
     spin();
+  }
+  if (target && target.matches("[data-action='open-login']")) {
+    openModal(loginModal);
   }
   const link = target?.closest?.("a");
   if (link && link.getAttribute("href")?.includes("second.html")) {
