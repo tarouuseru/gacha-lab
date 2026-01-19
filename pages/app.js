@@ -229,6 +229,7 @@ async function spin(options = { mode: "first" }) {
   if (data?.guest_token) {
     window.localStorage.setItem("guest_token", data.guest_token);
   }
+  const freeResultNeedLogin = data.status === "FREE_RESULT_NEED_LOGIN";
   if (data.status === "NEED_LOGIN_FREE") {
     if (mode === "first") openModal(loginModal);
     if (spinButton) spinButton.disabled = false;
@@ -255,6 +256,9 @@ async function spin(options = { mode: "first" }) {
     window.localStorage.removeItem("can_second_spin");
   }
   renderSpinResult(data, token, mode);
+  if (freeResultNeedLogin && mode === "first") {
+    openModal(loginModal);
+  }
 
   if (spinButton) spinButton.disabled = false;
 }

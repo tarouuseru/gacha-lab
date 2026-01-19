@@ -317,6 +317,7 @@ async function handleSpin(request, env) {
   }
   const guestHash = await sha256(guestToken);
 
+  let freeResultNeedLogin = false;
   if (!userId) {
     const usedRes = await supabaseRest(env, "/rest/v1/guest_free_spins", {
       query: `?select=used_at&gacha_id=eq.${encodeURIComponent(gachaId)}&guest_token_hash=eq.${encodeURIComponent(guestHash)}&limit=1`,
@@ -341,6 +342,7 @@ async function handleSpin(request, env) {
     if (!markRes.ok) {
       return jsonResponse({ error: "GUEST_MARK_FAILED" }, { status: 500, headers: baseHeaders, setCookie });
     }
+    freeResultNeedLogin = true;
   }
 
   if (userId) {
@@ -476,7 +478,7 @@ async function handleSpin(request, env) {
   }
 
   const responseBody = {
-    status: "SPUN",
+    status: freeResultNeedLogin ? "FREE_RESULT_NEED_LOGIN" : "SPUN",
     result,
     redeem: result === "WIN" ? redeem : null,
     debug: { contentType, bodyLen },
