@@ -36,6 +36,13 @@ function parseCookies(request) {
   return out;
 }
 
+function getGuestTokenFromRequest(request) {
+  const headerToken = request.headers.get("X-Guest-Token");
+  if (headerToken) return headerToken;
+  const cookies = parseCookies(request);
+  return cookies.guest_token || null;
+}
+
 function randomString(length, alphabet) {
   let output = "";
   const bytes = new Uint8Array(length);
@@ -286,8 +293,7 @@ async function handleSpin(request, env) {
     }
   }
 
-  const cookies = parseCookies(request);
-  let guestToken = cookies.guest_token || null;
+  let guestToken = getGuestTokenFromRequest(request);
   let setCookie = null;
   if (!guestToken) {
     guestToken = generateGuestToken();
@@ -461,6 +467,7 @@ async function handleSpin(request, env) {
     result,
     redeem: result === "WIN" ? redeem : null,
     debug: { contentType, bodyLen },
+    guest_token: guestToken,
   };
   return jsonResponse(responseBody, { status: 200, headers: baseHeaders, setCookie });
 }
@@ -509,10 +516,9 @@ async function handleClaimGuest(request, env) {
     return jsonResponse({ error: "UNAUTHORIZED" }, { status: 401, headers: baseHeaders });
   }
 
-  const cookies = parseCookies(request);
-  const guestToken = cookies.guest_token || null;
+  const guestToken = getGuestTokenFromRequest(request);
   if (!guestToken) {
-    return jsonResponse({ claimed: 0 }, { status: 200, headers: baseHeaders });
+    return jsonResponse({ claimed: 0, guest_token: null }, { status: 200, headers: baseHeaders });
   }
   const guestHash = await sha256(guestToken);
 
@@ -529,7 +535,10 @@ async function handleClaimGuest(request, env) {
     return jsonResponse({ error: "CLAIM_FAILED" }, { status: 500, headers: baseHeaders });
   }
   const data = await res.json();
-  return jsonResponse({ claimed: Array.isArray(data) ? data.length : 0 }, { status: 200, headers: baseHeaders });
+  return jsonResponse(
+    { claimed: Array.isArray(data) ? data.length : 0, guest_token: guestToken },
+    { status: 200, headers: baseHeaders }
+  );
 }
 
 async function handleLastSpin(request, env) {
@@ -552,8 +561,7 @@ async function handleLastSpin(request, env) {
       userId
     )}&order=created_at.desc&limit=1`;
   } else {
-    const cookies = parseCookies(request);
-    const guestToken = cookies.guest_token || null;
+    const guestToken = getGuestTokenFromRequest(request);
     if (!guestToken) {
       return jsonResponse({ exists: false }, { status: 200, headers: baseHeaders });
     }
@@ -620,8 +628,7 @@ async function handleTrack(request, env) {
 
   let guestHash = null;
   if (!userId) {
-    const cookies = parseCookies(request);
-    const guestToken = cookies.guest_token || null;
+    const guestToken = getGuestTokenFromRequest(request);
     if (guestToken) {
       guestHash = await sha256(guestToken);
     }

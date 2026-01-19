@@ -150,7 +150,11 @@ function showLoginSuccessOnce() {
 
 async function trackPaywallClick(reason) {
   const token = await getAccessToken();
-  const headers = { "Content-Type": "application/json" };
+  const guestToken = window.localStorage.getItem("guest_token");
+  const headers = {
+    "Content-Type": "application/json",
+    ...(guestToken ? { "X-Guest-Token": guestToken } : {}),
+  };
   if (token) headers.Authorization = `Bearer ${token}`;
   try {
     fetch(TRACK_API_URL, {
@@ -185,7 +189,11 @@ async function spin(options = { mode: "first" }) {
     if (spinButton) spinButton.disabled = false;
     return;
   }
-  const headers = { "Content-Type": "application/json" };
+  const guestToken = window.localStorage.getItem("guest_token");
+  const headers = {
+    "Content-Type": "application/json",
+    ...(guestToken ? { "X-Guest-Token": guestToken } : {}),
+  };
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const response = await fetch(SPIN_API_URL, {
@@ -218,6 +226,9 @@ async function spin(options = { mode: "first" }) {
 
   const data = await response.json();
   console.log("[spin] api result", data);
+  if (data?.guest_token) {
+    window.localStorage.setItem("guest_token", data.guest_token);
+  }
   if (data.status === "NEED_LOGIN_FREE") {
     if (mode === "first") openModal(loginModal);
     if (spinButton) spinButton.disabled = false;
@@ -305,7 +316,8 @@ async function restoreLastSpin() {
     return;
   }
   const token = await getAccessToken();
-  const headers = {};
+  const guestToken = window.localStorage.getItem("guest_token");
+  const headers = guestToken ? { "X-Guest-Token": guestToken } : {};
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const cached = sessionStorage.getItem("lastSpin");
