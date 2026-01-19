@@ -22,6 +22,19 @@ function corsHeaders(origin) {
   };
 }
 
+function cors(res) {
+  const headers = new Headers(res.headers);
+  headers.set("Access-Control-Allow-Origin", FIXED_ORIGIN);
+  headers.set("Access-Control-Allow-Credentials", "true");
+  headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Guest-Token");
+  headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  return new Response(res.body, {
+    status: res.status,
+    statusText: res.statusText,
+    headers,
+  });
+}
+
 function parseCookies(request) {
   const cookie = request.headers.get("Cookie") || "";
   const entries = cookie.split(";").map((part) => part.trim()).filter(Boolean);
@@ -173,7 +186,7 @@ function jsonResponse(body, { status = 200, headers = {}, setCookie } = {}) {
   if (setCookie) {
     responseHeaders.append("Set-Cookie", setCookie);
   }
-  return new Response(JSON.stringify(body), { status, headers: responseHeaders });
+  return cors(new Response(JSON.stringify(body), { status, headers: responseHeaders }));
 }
 
 function ensureSupabaseEnv(env, headers) {
@@ -662,10 +675,7 @@ export default {
     const allowOrigin = FIXED_ORIGIN;
 
     if (request.method === "OPTIONS") {
-      return new Response(null, {
-        status: 204,
-        headers: { ...corsHeaders(allowOrigin), ...JSON_HEADERS },
-      });
+      return cors(new Response(null, { status: 204 }));
     }
 
     const url = new URL(request.url);
