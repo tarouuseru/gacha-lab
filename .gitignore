@@ -11,3 +11,5 @@ yarn-error.log*
 # Cloudflare / Wrangler
 .wrangler/
 **/.wrangler/
+workers/node_modules/
+**/.DS_Store
