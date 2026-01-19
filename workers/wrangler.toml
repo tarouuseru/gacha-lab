@@ -1,0 +1,7 @@
+name = "gacha-mvp"
+main = "index.js"
+compatibility_date = "2024-10-01"
+
+[vars]
+ALLOWED_ORIGIN = "https://feat-admin-ui.gacha-lab.pages.dev,https://gacha-lab.pages.dev,http://localhost:8080"
+SUPABASE_URL = "https://ljbfjlmtmaebexdwimhd.supabase.co"

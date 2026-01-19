@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Logging in...</title>
+  </head>
+  <body>
+    <p>Logging in...</p>
+
+    <script src="./config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+      const config = window.APP_CONFIG || {};
+      const { SUPABASE_URL, SUPABASE_ANON_KEY } = config;
+
+      if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+        location.replace("/login.html");
+      }
+
+      const supabaseClient =
+        SUPABASE_URL && SUPABASE_ANON_KEY
+          ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+          : null;
+
+      async function finalizeLogin() {
+        if (!supabaseClient) {
+          location.replace("/login.html");
+          return;
+        }
+
+        const { data } = await supabaseClient.auth.getSession();
+        if (!data?.session) {
+          location.replace("/login.html");
+          return;
+        }
+
+        localStorage.setItem("is_logged_in", "1");
+        if (localStorage.getItem("did_first_spin") === "1") {
+          localStorage.setItem("can_second_spin", "1");
+        }
+        location.replace("/index.html");
+      }
+
+      finalizeLogin();
+    </script>
+  </body>
+</html>
