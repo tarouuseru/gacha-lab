@@ -1,3 +1,5 @@
+console.log("[GACHA-LAB] app.js version: 2026-02-02-1");
+
 console.log("[GLAB] app.js build=2026-01-13T23:59Z PAYWALL_SETRESULT_REMOVED");
 const config = window.APP_CONFIG;
 const supabaseClient = window.supabase.createClient(
