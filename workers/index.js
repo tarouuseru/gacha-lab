@@ -1,37 +1,70 @@
 const JSON_HEADERS = { "Content-Type": "application/json" };
-const FIXED_ORIGIN = "https://gacha-lab-pages.pages.dev";
+const DEFAULT_ALLOWED_ORIGINS = [
+  "https://gacha-lab.pages.dev",
+  "https://gacha-lab-pages.pages.dev",
+];
 const DEPLOY_ID = "2026-01-04T21:15JST";
+const CORS_VER = "2026-01-27-1";
 
 function resolveAllowedOrigin(requestOrigin, allowlist) {
-  const allowed = (allowlist || "")
+  const allowed = new Set(DEFAULT_ALLOWED_ORIGINS);
+  (allowlist || "")
     .split(",")
     .map((item) => item.trim())
-    .filter(Boolean);
-  if (!requestOrigin) return allowed[0] || "";
-  if (allowed.includes(requestOrigin)) return requestOrigin;
-  return allowed[0] || "";
+    .filter(Boolean)
+    .forEach((origin) => allowed.add(origin));
+  if (!requestOrigin) return "";
+  if (allowed.has(requestOrigin)) return requestOrigin;
+  return "";
 }
 
 function corsHeaders(origin) {
-  return {
-    "Access-Control-Allow-Origin": origin,
+  const headers = {
     "Access-Control-Allow-Credentials": "true",
-    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, PATCH, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Guest-Token",
-    "Vary": "Origin",
+    "Access-Control-Max-Age": "86400",
   };
+  if (origin) {
+    headers["Access-Control-Allow-Origin"] = origin;
+    headers["Vary"] = "Origin";
+  }
+  return headers;
 }
 
 function cors(res) {
   const headers = new Headers(res.headers);
-  headers.set("Access-Control-Allow-Origin", FIXED_ORIGIN);
+  const existingOrigin = headers.get("Access-Control-Allow-Origin");
+  if (existingOrigin) {
+    headers.set("Access-Control-Allow-Origin", existingOrigin);
+    headers.set("Vary", "Origin");
+  }
   headers.set("Access-Control-Allow-Credentials", "true");
   headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Guest-Token");
-  headers.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  headers.set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS");
+  headers.set("Access-Control-Max-Age", "86400");
+  headers.set("X-CORS-VER", CORS_VER);
   return new Response(res.body, {
     status: res.status,
     statusText: res.statusText,
     headers,
+  });
+}
+
+function preflight(request) {
+  const origin = request.headers.get("Origin") || "";
+  if (origin !== "https://gacha-lab.pages.dev") {
+    return new Response("CORS origin not allowed", { status: 403 });
+  }
+  return new Response(null, {
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Origin": "https://gacha-lab.pages.dev",
+      "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      "Access-Control-Allow-Credentials": "true",
+      "Vary": "Origin",
+    },
   });
 }
 
@@ -51,7 +84,7 @@ function parseCookies(request) {
 
 function getGuestTokenFromRequest(request) {
   const headerToken = request.headers.get("X-Guest-Token");
-  if (headerToken) return headerToken;
+  if (headerToken && headerToken !== "null" && headerToken !== "undefined") return headerToken;
   const cookies = parseCookies(request);
   return cookies.guest_token || null;
 }
@@ -209,7 +242,7 @@ function authorizeAdmin(request, env, headers) {
 }
 
 async function handleSpin(request, env) {
-  const allowOrigin = FIXED_ORIGIN;
+  const allowOrigin = resolveAllowedOrigin(request.headers.get("Origin"), env.ALLOWED_ORIGIN);
   const baseHeaders = {
     ...corsHeaders(allowOrigin),
     "X-Worker-Deploy": DEPLOY_ID,
@@ -306,7 +339,9 @@ async function handleSpin(request, env) {
     }
   }
 
+  const headerGuestToken = request.headers.get("X-Guest-Token");
   let guestToken = getGuestTokenFromRequest(request);
+  const hadGuestToken = Boolean(guestToken);
   let setCookie = null;
   if (!guestToken) {
     guestToken = generateGuestToken();
@@ -318,7 +353,10 @@ async function handleSpin(request, env) {
   const guestHash = await sha256(guestToken);
 
   let freeResultNeedLogin = false;
-  if (!userId) {
+  let guestFreeUsed = false;
+  let guestFreeUsedCount = 0;
+  let skipLoginFlow = false;
+  if (!userId || headerGuestToken) {
     const usedRes = await supabaseRest(env, "/rest/v1/guest_free_spins", {
       query: `?select=used_at&gacha_id=eq.${encodeURIComponent(gachaId)}&guest_token_hash=eq.${encodeURIComponent(guestHash)}&limit=1`,
     });
@@ -326,26 +364,42 @@ async function handleSpin(request, env) {
       return jsonResponse({ error: "GUEST_LOOKUP_FAILED" }, { status: 500, headers: baseHeaders, setCookie });
     }
     const usedData = await usedRes.json();
+    guestFreeUsedCount = Array.isArray(usedData) ? usedData.length : 0;
+    guestFreeUsed = guestFreeUsedCount > 0;
     if (usedData.length > 0) {
-      return jsonResponse({ status: "NEED_LOGIN_FREE" }, { status: 200, headers: baseHeaders, setCookie });
+      console.log("spin status decide", {
+        status: "NEED_LOGIN_FREE",
+        guestFreeUsed,
+        guestFreeUsedCount,
+        headerGuestToken,
+        guestToken,
+        hadGuestToken,
+        userId,
+      });
+      if (!userId) {
+        return jsonResponse({ status: "NEED_LOGIN_FREE" }, { status: 200, headers: baseHeaders, setCookie });
+      }
+    } else {
+      const markRes = await supabaseRest(env, "/rest/v1/guest_free_spins", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          gacha_id: gachaId,
+          guest_token_hash: guestHash,
+          used_at: new Date().toISOString(),
+        }),
+      });
+      if (!markRes.ok) {
+        return jsonResponse({ error: "GUEST_MARK_FAILED" }, { status: 500, headers: baseHeaders, setCookie });
+      }
+      freeResultNeedLogin = true;
+      if (userId) {
+        skipLoginFlow = true;
+      }
     }
-
-    const markRes = await supabaseRest(env, "/rest/v1/guest_free_spins", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        gacha_id: gachaId,
-        guest_token_hash: guestHash,
-        used_at: new Date().toISOString(),
-      }),
-    });
-    if (!markRes.ok) {
-      return jsonResponse({ error: "GUEST_MARK_FAILED" }, { status: 500, headers: baseHeaders, setCookie });
-    }
-    freeResultNeedLogin = true;
   }
 
-  if (userId) {
+  if (userId && !skipLoginFlow) {
     const bonusRes = await supabaseRest(env, "/rest/v1/user_bonus", {
       query: `?select=login_free_used&gacha_id=eq.${encodeURIComponent(gachaId)}&user_id=eq.${encodeURIComponent(userId)}&limit=1`,
     });
@@ -484,11 +538,26 @@ async function handleSpin(request, env) {
     debug: { contentType, bodyLen },
     guest_token: guestToken,
   };
+  console.log("spin guest token", {
+    headerGuestToken,
+    guestToken,
+    hadGuestToken,
+    userId,
+  });
+  console.log("spin free check", {
+    guestFreeUsed,
+    guestFreeUsedCount,
+    freeResultNeedLogin,
+  });
+  console.log("spin status decide", {
+    status: responseBody.status,
+    result,
+  });
   return jsonResponse(responseBody, { status: 200, headers: baseHeaders, setCookie });
 }
 
 async function handleMe(request, env) {
-  const allowOrigin = FIXED_ORIGIN;
+  const allowOrigin = resolveAllowedOrigin(request.headers.get("Origin"), env.ALLOWED_ORIGIN);
   const baseHeaders = corsHeaders(allowOrigin);
 
   const envError = ensureSupabaseEnv(env, baseHeaders);
@@ -515,7 +584,7 @@ async function handleMe(request, env) {
 }
 
 async function handleClaimGuest(request, env) {
-  const allowOrigin = FIXED_ORIGIN;
+  const allowOrigin = resolveAllowedOrigin(request.headers.get("Origin"), env.ALLOWED_ORIGIN);
   const baseHeaders = corsHeaders(allowOrigin);
 
   const envError = ensureSupabaseEnv(env, baseHeaders);
@@ -557,7 +626,7 @@ async function handleClaimGuest(request, env) {
 }
 
 async function handleLastSpin(request, env) {
-  const allowOrigin = FIXED_ORIGIN;
+  const allowOrigin = resolveAllowedOrigin(request.headers.get("Origin"), env.ALLOWED_ORIGIN);
   const baseHeaders = corsHeaders(allowOrigin);
 
   const envError = ensureSupabaseEnv(env, baseHeaders);
@@ -570,30 +639,34 @@ async function handleLastSpin(request, env) {
     userId = await supabaseAuthUser(env, token);
   }
 
-  let query = "";
-  if (userId) {
-    query = `?select=gacha_id,result,redeem_code,created_at&user_id=eq.${encodeURIComponent(
-      userId
-    )}&order=created_at.desc&limit=1`;
-  } else {
-    const guestToken = getGuestTokenFromRequest(request);
-    if (!guestToken) {
-      return jsonResponse({ exists: false }, { status: 200, headers: baseHeaders });
-    }
-    const guestHash = await sha256(guestToken);
-    query = `?select=gacha_id,result,redeem_code,created_at&guest_token_hash=eq.${encodeURIComponent(
-      guestHash
-    )}&order=created_at.desc&limit=1`;
-  }
-
-  try {
+  const guestToken = getGuestTokenFromRequest(request);
+  const guestHash = guestToken ? await sha256(guestToken) : null;
+  const fetchLast = async (query) => {
     const res = await supabaseRest(env, "/rest/v1/spins", { query });
     if (!res.ok) {
       console.error("last-spin lookup failed", await res.text());
-      return jsonResponse({ exists: false }, { status: 200, headers: baseHeaders });
+      return null;
     }
     const data = await res.json();
-    const row = data?.[0];
+    return data?.[0] || null;
+  };
+
+  try {
+    let row = null;
+    if (userId) {
+      row = await fetchLast(
+        `?select=gacha_id,result,redeem_code,created_at&user_id=eq.${encodeURIComponent(
+          userId
+        )}&order=created_at.desc&limit=1`
+      );
+    }
+    if (!row && guestHash) {
+      row = await fetchLast(
+        `?select=gacha_id,result,redeem_code,created_at&guest_token_hash=eq.${encodeURIComponent(
+          guestHash
+        )}&order=created_at.desc&limit=1`
+      );
+    }
     if (!row) {
       return jsonResponse({ exists: false }, { status: 200, headers: baseHeaders });
     }
@@ -614,7 +687,7 @@ async function handleLastSpin(request, env) {
 }
 
 async function handleTrack(request, env) {
-  const allowOrigin = FIXED_ORIGIN;
+  const allowOrigin = resolveAllowedOrigin(request.headers.get("Origin"), env.ALLOWED_ORIGIN);
   const baseHeaders = corsHeaders(allowOrigin);
 
   const envError = ensureSupabaseEnv(env, baseHeaders);
@@ -674,13 +747,14 @@ async function handleTrack(request, env) {
 
 export default {
   async fetch(request, env) {
-    const allowOrigin = FIXED_ORIGIN;
+    const url = new URL(request.url);
+    console.log("[REQ]", request.method, url.pathname, "Origin:", request.headers.get("Origin"));
+    const allowOrigin = resolveAllowedOrigin(request.headers.get("Origin"), env.ALLOWED_ORIGIN);
 
     if (request.method === "OPTIONS") {
-      return cors(new Response(null, { status: 204 }));
+      return preflight(request);
     }
 
-    const url = new URL(request.url);
     if (url.pathname.startsWith("/api/admin/")) {
       const baseHeaders = corsHeaders(allowOrigin);
       const envError = ensureSupabaseEnv(env, baseHeaders);

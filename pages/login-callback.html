@@ -11,6 +11,7 @@
     <script src="./config.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
+      const STATE_KEY = "gacha_state_v1";
       const config = window.APP_CONFIG || {};
       const { SUPABASE_URL, SUPABASE_ANON_KEY } = config;
 
@@ -22,6 +23,26 @@
         SUPABASE_URL && SUPABASE_ANON_KEY
           ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
           : null;
+
+      function loadState() {
+        try {
+          const raw = localStorage.getItem(STATE_KEY);
+          if (raw) return JSON.parse(raw);
+        } catch {
+          // ignore parse errors
+        }
+        return {
+          v: 1,
+          guest_token: localStorage.getItem("guest_token") || null,
+          firstSpin: { done: false, status: null, result: null, at: null },
+          auth: { loggedIn: false, userId: null },
+          ui: { step: "INIT", lastError: null },
+        };
+      }
+
+      function saveState(state) {
+        localStorage.setItem(STATE_KEY, JSON.stringify(state));
+      }
 
       async function finalizeLogin() {
         if (!supabaseClient) {
@@ -36,9 +57,13 @@
         }
 
         localStorage.setItem("is_logged_in", "1");
-        if (localStorage.getItem("did_first_spin") === "1") {
+        const state = loadState();
+        state.auth = { ...state.auth, loggedIn: true };
+        state.ui = { ...state.ui, step: "SECOND_READY" };
+        if (state.firstSpin?.done || localStorage.getItem("did_first_spin") === "1") {
           localStorage.setItem("can_second_spin", "1");
         }
+        saveState(state);
         location.replace("/index.html");
       }
 

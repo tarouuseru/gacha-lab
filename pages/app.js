@@ -9,6 +9,7 @@ const supabaseClient = window.supabase.createClient(
 const SPIN_API_URL = `${config.API_BASE}/api/spin`;
 const LAST_SPIN_URL = `${config.API_BASE}/api/last-spin`;
 const TRACK_API_URL = "https://gacha-mvp.glab-74.workers.dev/api/track";
+const STATE_KEY = "gacha_state_v1";
 
 const spinButton = document.getElementById("spinButton");
 const resultTitle = document.getElementById("resultTitle");
@@ -25,6 +26,88 @@ const paywallBody = paywallModal?.querySelector("p");
 const paywallCta = paywallModal?.querySelector(".modal-actions .btn");
 
 const loadingMessages = ["……", "見てるよ", "あと少し", "ちょっと待って"];
+
+function defaultState() {
+  return {
+    v: 1,
+    guest_token: null,
+    firstSpin: {
+      done: false,
+      status: null,
+      result: null,
+      at: null,
+    },
+    auth: {
+      loggedIn: false,
+      userId: null,
+    },
+    ui: {
+      step: "INIT",
+      lastError: null,
+    },
+  };
+}
+
+function loadState() {
+  let state = defaultState();
+  try {
+    const raw = localStorage.getItem(STATE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      state = { ...state, ...parsed };
+      state.firstSpin = { ...state.firstSpin, ...(parsed.firstSpin || {}) };
+      state.auth = { ...state.auth, ...(parsed.auth || {}) };
+      state.ui = { ...state.ui, ...(parsed.ui || {}) };
+    }
+  } catch {
+    state = defaultState();
+  }
+
+  const legacyToken = localStorage.getItem("guest_token");
+  if (!state.guest_token && legacyToken) {
+    state.guest_token = legacyToken;
+  }
+
+  const legacySpin = sessionStorage.getItem("lastSpin") || null;
+  if (!state.firstSpin.done && (legacySpin || window.__LAST_SPIN)) {
+    try {
+      const parsed = legacySpin ? JSON.parse(legacySpin) : window.__LAST_SPIN;
+        if (parsed?.result) {
+          state.firstSpin = {
+            done: true,
+            status: state.firstSpin.status || null,
+            result: parsed.result,
+            at: parsed.saved_at || Date.now(),
+          };
+        }
+    } catch {
+      // ignore legacy parse errors
+    }
+    sessionStorage.removeItem("lastSpin");
+    delete window.__LAST_SPIN;
+  }
+
+  return state;
+}
+
+function saveState(state) {
+  localStorage.setItem(STATE_KEY, JSON.stringify(state));
+}
+
+function renderState() {
+  // Reserved for future UI sync based on state.
+}
+
+let gachaState = loadState();
+saveState(gachaState);
+
+function updateState(patchFn) {
+  const next = patchFn({ ...gachaState });
+  gachaState = next;
+  saveState(gachaState);
+  renderState();
+  return gachaState;
+}
 
 function setAuthStatus(message) {
   if (authStatus) authStatus.textContent = message;
@@ -96,18 +179,26 @@ function winCtaGuest() {
 }
 
 function navigateToContinue() {
-  const didFirst = window.localStorage.getItem("did_first_spin") === "1";
-  const canSecond = window.localStorage.getItem("can_second_spin") === "1";
-  if (!didFirst) {
-    alert("先に1回回してください");
-    return;
-  }
-  if (!canSecond) {
-    window.location.href = "./login.html";
-    return;
-  }
-  console.log("[spin] second spin start");
-  spin({ mode: "second" });
+  const run = async () => {
+    let state = gachaState || loadState();
+    if (!state.firstSpin.done) {
+      await restoreFromServer();
+      state = gachaState || loadState();
+    }
+    const didFirst = window.localStorage.getItem("did_first_spin") === "1";
+    const canSecond = window.localStorage.getItem("can_second_spin") === "1";
+    if (!didFirst && !state.firstSpin.done) {
+      alert("先に1回回してください");
+      return;
+    }
+    if (!canSecond) {
+      window.location.href = "./login.html";
+      return;
+    }
+    console.log("[spin] second spin start");
+    spin({ mode: "second" });
+  };
+  void run();
 }
 
 async function getAccessToken() {
@@ -117,6 +208,13 @@ async function getAccessToken() {
 
 async function updateAuthUI() {
   const token = await getAccessToken();
+  updateState((state) => ({
+    ...state,
+    auth: {
+      ...state.auth,
+      loggedIn: Boolean(token),
+    },
+  }));
   if (token) {
     setAuthStatus("残り1回（ログイン特典）");
   } else {
@@ -198,6 +296,10 @@ async function spin(options = { mode: "first" }) {
   };
   if (token) headers.Authorization = `Bearer ${token}`;
 
+  console.log("[spin] guest_token (localStorage)", guestToken);
+  console.log("[spin] request headers", headers);
+  console.log("[spin] gacha_id", window.APP_CONFIG.GACHA_ID);
+
   const response = await fetch(SPIN_API_URL, {
     method: "POST",
     headers,
@@ -227,13 +329,28 @@ async function spin(options = { mode: "first" }) {
   }
 
   const data = await response.json();
+  console.log("[spin] raw response", data);
+  console.log("[spin] status", data?.status);
+  console.log("[spin] result fields", {
+    resultTitle: data?.resultTitle,
+    resultText: data?.resultText,
+    resultImage: data?.resultImage,
+    result: data?.result,
+    prize: data?.prize,
+  });
   console.log("[spin] api result", data);
   if (data?.guest_token) {
     window.localStorage.setItem("guest_token", data.guest_token);
+    updateState((state) => ({ ...state, guest_token: data.guest_token }));
   }
   const freeResultNeedLogin = data.status === "FREE_RESULT_NEED_LOGIN";
   if (data.status === "NEED_LOGIN_FREE") {
-    if (mode === "first") openModal(loginModal);
+    setResult({
+      title: "この先は、続きになります",
+      body: "さっきの続き、ちゃんと見せるね",
+      cta: `<button class="btn" data-action="open-login">続きへ進む</button>
+      <div class="small">ログインが必要です</div>`,
+    });
     if (spinButton) spinButton.disabled = false;
     return;
   }
@@ -247,17 +364,33 @@ async function spin(options = { mode: "first" }) {
   if (mode === "first" && (data.result === "WIN" || data.result === "LOSE")) {
     window.localStorage.setItem("did_first_spin", "1");
     console.log("[spin] did_first_spin saved");
-    const lastSpin = {
+    sessionStorage.setItem("HAS_SPUN_ONCE", "1");
+    const spinResult = {
       result: data.result,
       redeem: data.redeem || null,
       saved_at: Date.now(),
     };
-    sessionStorage.setItem("lastSpin", JSON.stringify(lastSpin));
+    sessionStorage.setItem("lastSpin", JSON.stringify(spinResult));
+    window.__LAST_SPIN = spinResult;
+    updateState((state) => ({
+      ...state,
+      firstSpin: {
+        done: true,
+        status: data.status || null,
+        result: data.result,
+        at: spinResult.saved_at,
+      },
+      ui: {
+        ...state.ui,
+        step: data.status === "FREE_RESULT_NEED_LOGIN" ? "NEED_LOGIN" : "SHOW_RESULT",
+      },
+    }));
   }
   if (mode === "second" && (data.result === "WIN" || data.result === "LOSE")) {
     window.localStorage.removeItem("can_second_spin");
   }
-  renderSpinResult(data, token, mode);
+  const normalized = normalizeSpinPayload(data);
+  renderSpinResult(normalized, token, mode);
   if (freeResultNeedLogin && mode === "first" && resultCta) {
     resultCta.innerHTML = `<button class="btn" data-action="open-login">続きへ進む</button>
       <div class="small">ログインが必要です</div>`;
@@ -267,6 +400,14 @@ async function spin(options = { mode: "first" }) {
 }
 
 function renderSpinResult(data, token, mode = "first") {
+  if (data?.resultTitle || data?.resultText || data?.resultImage) {
+    setResult({
+      title: data.resultTitle || "結果",
+      body: data.resultText || "",
+      cta: "",
+    });
+    return;
+  }
   if (data.result === "WIN") {
     if (mode === "second") {
       const redeemCode = data.redeem?.code
@@ -318,40 +459,26 @@ function renderSpinResult(data, token, mode = "first") {
   }
 }
 
-async function restoreLastSpin() {
-  if (window.location.pathname.endsWith("/second.html")) {
-    return;
-  }
-  const token = await getAccessToken();
-  const guestToken = window.localStorage.getItem("guest_token");
-  const headers = guestToken ? { "X-Guest-Token": guestToken } : {};
-  if (token) headers.Authorization = `Bearer ${token}`;
-
-  const cached = sessionStorage.getItem("lastSpin");
-  if (cached) {
-    try {
-      const parsed = JSON.parse(cached);
-      const savedAt = Number(parsed.saved_at || 0);
-      if (savedAt && Date.now() - savedAt <= 5 * 60 * 1000) {
-        renderSpinResult(
-          {
-            result: parsed.result,
-            redeem: parsed.redeem || null,
-          },
-          token
-        );
-        if (parsed.result === "LOSE") {
-          openPaywallModal("lose");
-        } else if (parsed.result === "WIN" && !token) {
-          openPaywallModal("win_locked");
-        }
-        return;
-      }
-      sessionStorage.removeItem("lastSpin");
-    } catch {
-      sessionStorage.removeItem("lastSpin");
+function normalizeSpinPayload(data) {
+  const normalized = { ...data };
+  if (data?.result && typeof data.result === "object") {
+    if (data.result.title) normalized.resultTitle = data.result.title;
+    if (data.result.text) normalized.resultText = data.result.text;
+    if (data.result.image) normalized.resultImage = data.result.image;
+    if (data.result.result) normalized.result = data.result.result;
+    if (data.result.win !== undefined && !normalized.result) {
+      normalized.result = data.result.win ? "WIN" : "LOSE";
     }
   }
+  return normalized;
+}
+
+async function restoreFromServer() {
+  const token = await getAccessToken();
+  const state = gachaState || loadState();
+  const guestToken = state.guest_token || localStorage.getItem("guest_token");
+  const headers = guestToken ? { "X-Guest-Token": guestToken } : {};
+  if (token) headers.Authorization = `Bearer ${token}`;
 
   try {
     const res = await fetch(LAST_SPIN_URL, {
@@ -359,22 +486,101 @@ async function restoreLastSpin() {
       headers,
       credentials: "include",
     });
-    if (!res.ok) return;
+    if (!res.ok) return null;
     const data = await res.json();
-    if (!data?.exists) return;
+    if (!data?.exists) return null;
     const createdAt = data.created_at ? new Date(data.created_at) : null;
-    if (!createdAt || Number.isNaN(createdAt.getTime())) return;
+    if (!createdAt || Number.isNaN(createdAt.getTime())) return null;
     const ageMs = Date.now() - createdAt.getTime();
-    if (ageMs > 5 * 60 * 1000) return;
+    if (ageMs > 5 * 60 * 1000) return null;
+
+    updateState((prev) => ({
+      ...prev,
+      guest_token: prev.guest_token || guestToken,
+      firstSpin: {
+        done: true,
+        status: prev.firstSpin.status || null,
+        result: data.result,
+        at: createdAt.getTime(),
+      },
+      ui: {
+        ...prev.ui,
+        step: prev.auth.loggedIn ? "SECOND_READY" : "NEED_LOGIN",
+      },
+    }));
+
+    return {
+      result: data.result,
+      redeem: data.redeem,
+      created_at: data.created_at,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function restoreLastSpin() {
+  if (window.location.pathname.endsWith("/second.html")) {
+    return;
+  }
+  let restored = false;
+  const resetLastSpinUI = () => {
+    setResult({
+      title: "結果",
+      body: "まだ回していません。",
+      cta: "",
+    });
+    if (spinButton) spinButton.disabled = false;
+  };
+  const token = await getAccessToken();
+  const guestToken = window.localStorage.getItem("guest_token");
+  const headers = guestToken ? { "X-Guest-Token": guestToken } : {};
+  if (token) headers.Authorization = `Bearer ${token}`;
+
+  try {
+    const cached = sessionStorage.getItem("lastSpin");
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        const savedAt = Number(parsed.saved_at || 0);
+        if (savedAt && Date.now() - savedAt <= 5 * 60 * 1000) {
+          renderSpinResult(
+            {
+              result: parsed.result,
+              redeem: parsed.redeem || null,
+            },
+            token
+          );
+          restored = true;
+          if (parsed.result === "LOSE") {
+            openPaywallModal("lose");
+          } else if (parsed.result === "WIN" && !token) {
+            openPaywallModal("win_locked");
+          }
+          return;
+        }
+        sessionStorage.removeItem("lastSpin");
+      } catch {
+        sessionStorage.removeItem("lastSpin");
+      }
+    }
+
+    const serverSpin = await restoreFromServer();
+    if (!serverSpin) return;
     renderSpinResult(
       {
-        result: data.result,
-        redeem: data.redeem,
+        result: serverSpin.result,
+        redeem: serverSpin.redeem,
       },
       token
     );
+    restored = true;
   } catch {
     // ignore restore errors
+  } finally {
+    if (!restored) {
+      resetLastSpinUI();
+    }
   }
 }
 
@@ -386,7 +592,7 @@ resultCta?.addEventListener("click", (event) => {
     spin();
   }
   if (target && target.matches("[data-action='open-login']")) {
-    openModal(loginModal);
+    window.location.href = "./login.html";
   }
   const link = target?.closest?.("a");
   if (link && link.getAttribute("href")?.includes("second.html")) {

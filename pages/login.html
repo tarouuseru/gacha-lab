@@ -20,10 +20,8 @@
       <section class="card hero">
         <h1>この先は、続きになります</h1>
         <p>さっきの続き、ちゃんと見せるね</p>
-        <form id="loginForm">
-          <input type="email" id="email" placeholder="you@example.com" required />
-          <button class="btn" type="submit">続きへ進む</button>
-        </form>
+        <p class="small">LOGIN MODE: GOOGLE ONLY</p>
+        <button class="btn" id="googleLoginButton" type="button">Googleで続きへ進む</button>
         <div class="status" id="loginStatus"></div>
         <div class="small">ログインが必要です</div>
       </section>
@@ -32,7 +30,7 @@
     <script src="./config.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
-      const form = document.getElementById("loginForm");
+      const loginButton = document.getElementById("googleLoginButton");
       const status = document.getElementById("loginStatus");
 
       const config = window.APP_CONFIG || {};
@@ -47,22 +45,20 @@
           ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
           : null;
 
-      form.addEventListener("submit", async (event) => {
-        event.preventDefault();
+      loginButton.addEventListener("click", async () => {
         if (!supabaseClient) return;
-        status.textContent = "送信中...";
-        const email = document.getElementById("email").value.trim();
+        status.textContent = "リダイレクト中...";
         const redirectTo = "https://gacha-lab.pages.dev/login-callback.html";
 
-        const { error } = await supabaseClient.auth.signInWithOtp({
-          email,
-          options: { emailRedirectTo: redirectTo },
+        const { error } = await supabaseClient.auth.signInWithOAuth({
+          provider: "google",
+          options: { redirectTo },
         });
 
         if (error) {
-          status.textContent = `送信失敗: ${error.message}`;
+          status.textContent = `ログイン失敗: ${error.message}`;
         } else {
-          status.textContent = "メールを送信しました。";
+          status.textContent = "Googleログインに移動しています。";
         }
       });
     </script>

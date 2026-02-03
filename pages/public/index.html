@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gacha MVP</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header>
+      <div class="brand">GACHA LAB</div>
+    </header>
+    <main>
+      <section class="card hero">
+        <h1>じゃあ、回してみる？</h1>
+        <p class="small">まずは1回だけ</p>
+        <button class="spin-btn" id="spinButton">回してみる</button>
+        <div class="status" id="authStatus"></div>
+      </section>
+      <section class="card result" id="resultCard">
+        <h2 id="resultTitle">結果</h2>
+        <p id="resultText">まだ回していません。</p>
+        <div id="resultCta"></div>
+      </section>
+    </main>
+
+    <div class="modal" id="loginModal">
+      <div class="modal-card">
+        <h3>この先は、続きになります</h3>
+        <p class="preline">さっきの続き、ちゃんと見せるね</p>
+        <div class="modal-actions">
+          <a class="btn" href="./login.html">続きへ進む</a>
+        </div>
+        <div class="small">ログインが必要です</div>
+      </div>
+    </div>
+
+    <div class="modal" id="paywallModal">
+      <div class="modal-card">
+        <h3>ここから先は、選んだ人だけ</h3>
+        <p class="preline">さっきの“続き”は残してある。
+次で、案内まで進める。</p>
+        <div class="modal-actions">
+          <a class="btn" href="https://example.com/paywall" target="_blank" rel="noreferrer">続きへ進む（有料）</a>
+        </div>
+        <div class="small">※1回ごとに結果が確定します</div>
+      </div>
+    </div>
+
+    <div class="modal" id="loginSuccessModal">
+      <div class="modal-card">
+        <h3>ログイン完了</h3>
+        <p class="preline">+1回、追加しておいた。
+さっきの続き、ここで終わる？</p>
+        <div class="modal-actions">
+          <button class="btn" id="loginSuccessButton">もう一度回す</button>
+        </div>
+        <div class="small">※この1回で結果が確定します</div>
+      </div>
+    </div>
+
+    <script src="/config.js?v=20260104"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./app.js?v=20260104_2200"></script>
+  </body>
+</html>

@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ログイン</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header>
+      <div class="brand">GACHA LAB</div>
+    </header>
+    <main>
+      <section class="card hero">
+        <h1>この先は、続きになります</h1>
+        <p>さっきの続き、ちゃんと見せるね</p>
+        <form id="loginForm">
+          <input type="email" id="email" placeholder="you@example.com" required />
+          <button class="btn" type="submit">続きへ進む</button>
+        </form>
+        <div class="status" id="loginStatus"></div>
+        <div class="small">ログインが必要です</div>
+      </section>
+    </main>
+
+    <script src="./config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+      const config = window.APP_CONFIG;
+      const supabaseClient = window.supabase.createClient(
+        config.SUPABASE_URL,
+        config.SUPABASE_ANON_KEY
+      );
+
+      const form = document.getElementById("loginForm");
+      const status = document.getElementById("loginStatus");
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        status.textContent = "送信中...";
+        const email = document.getElementById("email").value.trim();
+        const next = new URLSearchParams(window.location.search).get("next") || "/index.html";
+        const redirectTo = `https://gacha-lab.pages.dev/auth-callback.html?next=${encodeURIComponent(next)}`;
+
+        const { error } = await supabaseClient.auth.signInWithOtp({
+          email,
+          options: { emailRedirectTo: redirectTo },
+        });
+
+        if (error) {
+          status.textContent = `送信失敗: ${error.message}`;
+        } else {
+          status.textContent = "メールを確認してください。";
+        }
+      });
+    </script>
+  </body>
+</html>
