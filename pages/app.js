@@ -147,6 +147,7 @@ function closeModals() {
 }
 
 function setResult({ title, body, cta }) {
+  window.__lastResultShownAt = Date.now();
   console.log("[SR payload]", { title, body, cta });
   console.trace("[SR stack]");
   console.log("setResult DOM refs", {
@@ -581,7 +582,10 @@ async function restoreLastSpin() {
     // ignore restore errors
   } finally {
     if (!restored) {
-      resetLastSpinUI();
+      const lastShown = window.__lastResultShownAt || 0;
+      if (Date.now() - lastShown >= 3000) {
+        resetLastSpinUI();
+      }
     }
   }
 }
