@@ -147,6 +147,8 @@ function closeModals() {
 }
 
 function setResult({ title, body, cta }) {
+  console.log("[SR payload]", { title, body, cta });
+  console.trace("[SR stack]");
   console.log("setResult DOM refs", {
     resultTitle: resultTitle ? `#${resultTitle.id}` : null,
     resultText: resultText ? `#${resultText.id}` : null,
