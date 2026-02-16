@@ -177,8 +177,8 @@ function setResult({ title, body, cta }) {
   if (resultCta) {
     resultCta.innerHTML = cta || "";
   }
-  const spinCard = document.querySelector(".spin-card");
-  if (spinCard) spinCard.style.display = "none";
+  const leftCard = document.querySelector(".card.hero");
+  if (leftCard) leftCard.style.display = "none";
 }
 
 function showResult(title, body, ctaHtml) {
