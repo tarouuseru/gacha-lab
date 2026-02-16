@@ -186,6 +186,11 @@ function setResult({ title, body, cta }) {
       if (grid) {
         grid.style.gridTemplateColumns = "1fr 1fr";
       }
+      const container = leftCard.closest(".container, .main, .wrap");
+      if (container) {
+        container.style.display = "flex";
+        container.style.justifyContent = "flex-end";
+      }
     } else {
       leftCard.style.visibility = "";
       leftCard.style.pointerEvents = "";
