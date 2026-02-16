@@ -265,6 +265,19 @@ function navigateToContinue() {
   void run();
 }
 
+function showContinueInline() {
+  let area = document.getElementById("continueArea");
+  if (!area) {
+    area = document.createElement("div");
+    area.id = "continueArea";
+    area.className = "continue-area";
+    area.textContent = "続き表示（ログイン済み）";
+    const host = resultCta?.parentElement || resultText?.parentElement || document.body;
+    host.appendChild(area);
+  }
+  area.style.display = "block";
+}
+
 async function getAccessToken() {
   const { data } = await supabaseClient.auth.getSession();
   return data?.session?.access_token || null;
@@ -683,7 +696,14 @@ resultCta?.addEventListener("click", (event) => {
   const link = target?.closest?.("a");
   if (link && link.getAttribute("href")?.includes("second.html")) {
     event.preventDefault();
-    navigateToContinue();
+    void (async () => {
+      const token = await getAccessToken();
+      if (token) {
+        showContinueInline();
+      } else {
+        window.location.href = "/login.html";
+      }
+    })();
   }
 });
 
