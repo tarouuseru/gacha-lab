@@ -46,13 +46,13 @@
 
       async function finalizeLogin() {
         if (!supabaseClient) {
-          location.replace("/?restore=1");
+          location.replace(`${location.origin}/?restore=1`);
           return;
         }
 
         const { data } = await supabaseClient.auth.getSession();
         if (!data?.session) {
-          location.replace("/?restore=1");
+          location.replace(`${location.origin}/?restore=1`);
           return;
         }
 
@@ -64,7 +64,7 @@
           localStorage.setItem("can_second_spin", "1");
         }
         saveState(state);
-        location.replace("/?restore=1");
+        location.replace(`${location.origin}/?restore=1`);
       }
 
       finalizeLogin();
