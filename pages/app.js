@@ -159,6 +159,22 @@ function setResult({ title, body, cta }) {
   console.log(`[SR#${__srId}] from=${__from}`);
   window.__lastResultShownAt = Date.now();
   console.log("[SR payload]", { title, body, cta });
+  try {
+    localStorage.setItem(
+      "gl:lastSpinResult:v1",
+      JSON.stringify({
+        version: 1,
+        title,
+        body,
+        cta,
+        shownAt: Date.now(),
+        guest_token: localStorage.getItem("guest_token") || null,
+      })
+    );
+    console.log("[SR] saved to localStorage");
+  } catch (e) {
+    console.warn("[SR] save failed", e);
+  }
   console.trace("[SR stack]");
   console.log("setResult DOM refs", {
     resultTitle: resultTitle ? `#${resultTitle.id}` : null,
@@ -195,6 +211,22 @@ function setResult({ title, body, cta }) {
       leftCard.style.visibility = "";
       leftCard.style.pointerEvents = "";
     }
+  }
+  // ===== SAVE LAST SPIN RESULT =====
+  try {
+    localStorage.setItem(
+      "gl:lastSpinResult:v1",
+      JSON.stringify({
+        version: 1,
+        title,
+        body,
+        cta,
+        shownAt: Date.now(),
+        guest_token: localStorage.getItem("guest_token") || null,
+      })
+    );
+  } catch (e) {
+    console.warn("[SR] save failed", e);
   }
 }
 
@@ -660,6 +692,13 @@ document.querySelectorAll("[data-close]").forEach((button) => {
 });
 
 updateAuthUI();
+const forceRestore = new URL(location.href).searchParams.get("restore") === "1";
+if (forceRestore) {
+  restoreLastSpin();
+  const url = new URL(location.href);
+  url.searchParams.delete("restore");
+  history.replaceState({}, "", url.toString());
+}
 if (!window.location.pathname.endsWith("/second.html")) {
   restoreLastSpin();
 }
