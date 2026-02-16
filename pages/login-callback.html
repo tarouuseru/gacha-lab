@@ -16,7 +16,7 @@
       const { SUPABASE_URL, SUPABASE_ANON_KEY } = config;
 
       if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-        location.replace("/login.html");
+        location.replace("/?restore=1");
       }
 
       const supabaseClient =
@@ -46,13 +46,13 @@
 
       async function finalizeLogin() {
         if (!supabaseClient) {
-          location.replace("/login.html");
+          location.replace("/?restore=1");
           return;
         }
 
         const { data } = await supabaseClient.auth.getSession();
         if (!data?.session) {
-          location.replace("/login.html");
+          location.replace("/?restore=1");
           return;
         }
 
