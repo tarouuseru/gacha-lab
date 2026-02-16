@@ -147,6 +147,16 @@ function closeModals() {
 }
 
 function setResult({ title, body, cta }) {
+  window.__srSeq = (window.__srSeq || 0) + 1;
+  const __srId = window.__srSeq;
+  const __srTs = Date.now();
+  console.log(`[SR#${__srId}] setResult ENTER @${__srTs}`, { title, body, cta });
+  const __stack = new Error().stack || "";
+  let __from = "unknown";
+  if (__stack.includes("spin")) __from = "spin";
+  else if (__stack.includes("restoreLastSpin")) __from = "restoreLastSpin";
+  else if (__stack.includes("resetLastSpinUI")) __from = "resetLastSpinUI";
+  console.log(`[SR#${__srId}] from=${__from}`);
   window.__lastResultShownAt = Date.now();
   console.log("[SR payload]", { title, body, cta });
   console.trace("[SR stack]");
@@ -348,6 +358,10 @@ async function spin(options = { mode: "first" }) {
   }
   const freeResultNeedLogin = data.status === "FREE_RESULT_NEED_LOGIN";
   if (data.status === "NEED_LOGIN_FREE") {
+    console.log("[BRANCH] NEED_LOGIN_FREE -> setResult", {
+      status: data.status,
+      result: data.result,
+    });
     setResult({
       title: "この先は、続きになります",
       body: "さっきの続き、ちゃんと見せるね",
@@ -527,7 +541,14 @@ async function restoreLastSpin() {
     return;
   }
   let restored = false;
+  window.__uiSeq = window.__uiSeq || 0;
+  window.__rlSeq = window.__rlSeq || 0;
   const resetLastSpinUI = () => {
+    window.__uiSeq += 1;
+    const __uiId = window.__uiSeq;
+    const __uiTs = Date.now();
+    console.log(`[UI#${__uiId}] resetLastSpinUI ENTER @${__uiTs}`);
+    console.trace("[UI] resetLastSpinUI stack");
     setResult({
       title: "結果",
       body: "まだ回していません。",
@@ -535,6 +556,10 @@ async function restoreLastSpin() {
     });
     if (spinButton) spinButton.disabled = false;
   };
+  window.__rlSeq += 1;
+  const __rlId = window.__rlSeq;
+  const __rlTs = Date.now();
+  console.log(`[RL#${__rlId}] restoreLastSpin ENTER @${__rlTs}`);
   const token = await getAccessToken();
   const guestToken = window.localStorage.getItem("guest_token");
   const headers = guestToken ? { "X-Guest-Token": guestToken } : {};
@@ -581,6 +606,10 @@ async function restoreLastSpin() {
   } catch {
     // ignore restore errors
   } finally {
+    const __rlTsDone = Date.now();
+    console.log(`[RL#${__rlId}] restoreLastSpin FINALLY @${__rlTsDone}`, {
+      restored,
+    });
     if (!restored) {
       const lastShown = window.__lastResultShownAt || 0;
       if (Date.now() - lastShown >= 3000) {
