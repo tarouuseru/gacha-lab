@@ -178,8 +178,14 @@ function setResult({ title, body, cta }) {
     resultCta.innerHTML = cta || "";
   }
   const leftCard = document.querySelector(".card.hero");
-  if (leftCard && title !== "結果") {
-    leftCard.style.display = "none";
+  if (leftCard) {
+    if (title !== "結果") {
+      leftCard.style.visibility = "hidden";
+      leftCard.style.pointerEvents = "none";
+    } else {
+      leftCard.style.visibility = "";
+      leftCard.style.pointerEvents = "";
+    }
   }
 }
 
