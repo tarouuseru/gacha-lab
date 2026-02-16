@@ -64,6 +64,11 @@
           localStorage.setItem("can_second_spin", "1");
         }
         saveState(state);
+        // Clear stale first-spin flags after login to avoid false PAYWALL paths
+        localStorage.removeItem("did_first_spin");
+        localStorage.removeItem("HAS_SPUN_ONCE");
+        localStorage.removeItem("lastSpin");
+        localStorage.removeItem("can_second_spin");
         location.replace(`${location.origin}/?restore=1`);
       }
 
