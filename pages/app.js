@@ -192,6 +192,9 @@ function setResult({ title, body, cta }) {
   }
   if (resultCta) {
     resultCta.innerHTML = cta || "";
+    resultCta.querySelectorAll("button").forEach((btn) => {
+      if (!btn.type) btn.type = "button";
+    });
   }
   const leftCard = document.querySelector(".card.hero");
   if (leftCard) {
