@@ -16,7 +16,7 @@
       const { SUPABASE_URL, SUPABASE_ANON_KEY } = config;
 
       if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-        location.replace("/?restore=1");
+        location.replace(`${location.origin}/?restore=1`);
       }
 
       const supabaseClient =

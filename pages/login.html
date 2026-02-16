@@ -48,7 +48,7 @@
       loginButton.addEventListener("click", async () => {
         if (!supabaseClient) return;
         status.textContent = "リダイレクト中...";
-        const redirectTo = "https://gacha-lab.pages.dev/login-callback.html";
+        const redirectTo = `${location.origin}/login-callback.html`;
 
         const { error } = await supabaseClient.auth.signInWithOAuth({
           provider: "google",
