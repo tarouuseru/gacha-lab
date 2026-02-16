@@ -178,7 +178,9 @@ function setResult({ title, body, cta }) {
     resultCta.innerHTML = cta || "";
   }
   const leftCard = document.querySelector(".card.hero");
-  if (leftCard) leftCard.style.display = "none";
+  if (leftCard && title !== "結果") {
+    leftCard.style.display = "none";
+  }
 }
 
 function showResult(title, body, ctaHtml) {
