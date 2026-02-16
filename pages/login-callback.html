@@ -69,6 +69,9 @@
         localStorage.removeItem("HAS_SPUN_ONCE");
         localStorage.removeItem("lastSpin");
         localStorage.removeItem("can_second_spin");
+        sessionStorage.removeItem("HAS_SPUN_ONCE");
+        sessionStorage.removeItem("lastSpin");
+        sessionStorage.removeItem("can_second_spin");
         location.replace(`${location.origin}/?restore=1`);
       }
 
