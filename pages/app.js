@@ -177,6 +177,8 @@ function setResult({ title, body, cta }) {
   if (resultCta) {
     resultCta.innerHTML = cta || "";
   }
+  const spinCard = document.querySelector(".spin-card");
+  if (spinCard) spinCard.style.display = "none";
 }
 
 function showResult(title, body, ctaHtml) {
