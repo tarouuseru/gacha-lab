@@ -182,6 +182,10 @@ function setResult({ title, body, cta }) {
     if (title !== "結果") {
       leftCard.style.visibility = "hidden";
       leftCard.style.pointerEvents = "none";
+      const grid = leftCard.closest(".grid");
+      if (grid) {
+        grid.style.gridTemplateColumns = "1fr 1fr";
+      }
     } else {
       leftCard.style.visibility = "";
       leftCard.style.pointerEvents = "";
