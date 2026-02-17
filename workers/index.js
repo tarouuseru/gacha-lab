@@ -20,25 +20,18 @@ function resolveAllowedOrigin(requestOrigin, allowlist) {
 
 function corsHeaders(origin) {
   const headers = {
+    "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Credentials": "true",
     "Access-Control-Allow-Methods": "GET, POST, PATCH, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Guest-Token",
     "Access-Control-Max-Age": "86400",
   };
-  if (origin) {
-    headers["Access-Control-Allow-Origin"] = origin;
-    headers["Vary"] = "Origin";
-  }
   return headers;
 }
 
 function cors(res) {
   const headers = new Headers(res.headers);
-  const existingOrigin = headers.get("Access-Control-Allow-Origin");
-  if (existingOrigin) {
-    headers.set("Access-Control-Allow-Origin", existingOrigin);
-    headers.set("Vary", "Origin");
-  }
+  headers.set("Access-Control-Allow-Origin", "*");
   headers.set("Access-Control-Allow-Credentials", "true");
   headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Guest-Token");
   headers.set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS");
@@ -807,6 +800,16 @@ async function handleTrack(request, env) {
 
 export default {
   async fetch(request, env) {
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Methods": "POST, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type",
+        },
+      });
+    }
     try {
       const url = new URL(request.url);
       console.log("[REQ]", request.method, url.pathname, "Origin:", request.headers.get("Origin"));
