@@ -1,4 +1,4 @@
-const JSON_HEADERS = { "Content-Type": "application/json" };
+const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8" };
 
 function randomHex(bytesLength = 32) {
   const bytes = new Uint8Array(bytesLength);
@@ -252,4 +252,11 @@ export async function onRequestPost(context) {
   responseBody.result_id = inserted?.[0]?.id || null;
 
   return jsonResponse(responseBody, { status: 200, setCookie });
+}
+
+export async function onRequest(context) {
+  if (context.request.method === "POST") {
+    return onRequestPost(context);
+  }
+  return jsonResponse({ error: "METHOD_NOT_ALLOWED" }, { status: 405 });
 }
