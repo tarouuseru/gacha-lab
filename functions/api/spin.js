@@ -119,8 +119,7 @@ function jsonResponse(body, { status = 200, headers = {}, setCookie } = {}) {
   return new Response(JSON.stringify(body), { status, headers: responseHeaders });
 }
 
-export async function onRequestPost(context) {
-  const { request, env } = context;
+async function handlePost(request, env) {
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
     return jsonResponse({ error: "MISSING_SUPABASE_ENV" }, { status: 500 });
   }
@@ -254,21 +253,22 @@ export async function onRequestPost(context) {
   return jsonResponse(responseBody, { status: 200, setCookie });
 }
 
-export async function onRequestOptions() {
-  return new Response(null, {
-    status: 204,
-    headers: {
-      "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
-      "Access-Control-Max-Age": "86400",
-    },
-  });
-}
-
-export async function onRequest(context) {
-  if (context.request.method === "POST") {
-    return onRequestPost(context);
+export async function onRequest({ request, env }) {
+  if (request.method === "OPTIONS") {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "POST, OPTIONS",
+        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Max-Age": "86400",
+      },
+    });
   }
+
+  if (request.method === "POST") {
+    return handlePost(request, env);
+  }
+
   return jsonResponse({ error: "METHOD_NOT_ALLOWED" }, { status: 405 });
 }
