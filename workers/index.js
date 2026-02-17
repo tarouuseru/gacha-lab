@@ -86,7 +86,7 @@ function getGuestTokenFromRequest(request) {
   const headerToken = request.headers.get("X-Guest-Token");
   if (headerToken && headerToken !== "null" && headerToken !== "undefined") return headerToken;
   const cookies = parseCookies(request);
-  return cookies.guest_token || null;
+  return cookies.gl_guest || cookies.guest_token || null;
 }
 
 function randomString(length, alphabet) {
@@ -100,8 +100,11 @@ function randomString(length, alphabet) {
 }
 
 function generateGuestToken() {
-  const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-  return randomString(32, alphabet);
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 async function sha256(input) {
@@ -345,12 +348,25 @@ async function handleSpin(request, env) {
   let setCookie = null;
   if (!guestToken) {
     guestToken = generateGuestToken();
-    const allowOrigin = env.ALLOWED_ORIGIN || "";
-    const isLocalhost = allowOrigin.startsWith("http://localhost");
-    const secureAttr = isLocalhost ? "" : " Secure;";
-    setCookie = `guest_token=${guestToken}; HttpOnly;${secureAttr} SameSite=Lax; Path=/; Max-Age=31536000`;
+    setCookie =
+      `gl_guest=${guestToken}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=604800`;
   }
   const guestHash = await sha256(guestToken);
+
+  if (!userId) {
+    const existingRes = await supabaseRest(env, "/rest/v1/gacha_results", {
+      query: `?select=id&gacha_id=eq.${encodeURIComponent(gachaId)}&guest_token=eq.${encodeURIComponent(
+        guestToken
+      )}&limit=1`,
+    });
+    if (!existingRes.ok) {
+      return jsonResponse({ error: "RESULT_LOOKUP_FAILED" }, { status: 500, headers: baseHeaders, setCookie });
+    }
+    const existing = await existingRes.json();
+    if (Array.isArray(existing) && existing.length > 0) {
+      return jsonResponse({ error: "ALREADY_SPUN" }, { status: 409, headers: baseHeaders, setCookie });
+    }
+  }
 
   let freeResultNeedLogin = false;
   let guestFreeUsed = false;
@@ -538,6 +554,39 @@ async function handleSpin(request, env) {
     debug: { contentType, bodyLen },
     guest_token: guestToken,
   };
+
+  if (!userId) {
+    const payload = {
+      status: responseBody.status,
+      result,
+      redeem: responseBody.redeem,
+    };
+    const insertRes = await supabaseRest(env, "/rest/v1/gacha_results", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Prefer: "return=representation" },
+      body: JSON.stringify([
+        {
+          gacha_id: gachaId,
+          guest_token: guestToken,
+          user_id: null,
+          result_type: result,
+          payload,
+          version: 1,
+          created_at: new Date().toISOString(),
+        },
+      ]),
+    });
+    if (!insertRes.ok) {
+      const detail = await insertRes.text();
+      console.error("gacha_results insert failed", detail);
+      return jsonResponse(
+        { error: "DB_INSERT_FAILED", detail },
+        { status: 500, headers: baseHeaders, setCookie }
+      );
+    }
+    const inserted = await insertRes.json();
+    responseBody.result_id = inserted?.[0]?.id || null;
+  }
   console.log("spin guest token", {
     headerGuestToken,
     guestToken,
