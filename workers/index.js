@@ -807,38 +807,79 @@ async function handleTrack(request, env) {
 
 export default {
   async fetch(request, env) {
-    const url = new URL(request.url);
-    console.log("[REQ]", request.method, url.pathname, "Origin:", request.headers.get("Origin"));
-    const allowOrigin = resolveAllowedOrigin(request.headers.get("Origin"), env.ALLOWED_ORIGIN);
+    try {
+      const url = new URL(request.url);
+      console.log("[REQ]", request.method, url.pathname, "Origin:", request.headers.get("Origin"));
+      const allowOrigin = resolveAllowedOrigin(request.headers.get("Origin"), env.ALLOWED_ORIGIN);
 
-    if (request.method === "OPTIONS") {
-      return preflight(request);
-    }
+      if (request.method === "OPTIONS") {
+        return preflight(request);
+      }
 
-    if (url.pathname.startsWith("/api/admin/")) {
-      const baseHeaders = corsHeaders(allowOrigin);
-      const envError = ensureSupabaseEnv(env, baseHeaders);
-      if (envError) return envError;
-      const authError = authorizeAdmin(request, env, baseHeaders);
-      if (authError) return authError;
+      if (url.pathname.startsWith("/api/admin/")) {
+        const baseHeaders = corsHeaders(allowOrigin);
+        const envError = ensureSupabaseEnv(env, baseHeaders);
+        if (envError) return envError;
+        const authError = authorizeAdmin(request, env, baseHeaders);
+        if (authError) return authError;
 
-      const segments = url.pathname.split("/").filter(Boolean);
-      if (segments[2] === "gachas" && segments[3]) {
-        const gachaId = segments[3];
-        if (segments.length === 4 && request.method === "GET") {
-          const res = await supabaseRest(env, "/rest/v1/gachas", {
-            query: `?select=id,win_rate,is_active&id=eq.${encodeURIComponent(gachaId)}&limit=1`,
-          });
-          if (!res.ok) {
-            return jsonResponse({ error: "GACHA_LOOKUP_FAILED" }, { status: 500, headers: baseHeaders });
+        const segments = url.pathname.split("/").filter(Boolean);
+        if (segments[2] === "gachas" && segments[3]) {
+          const gachaId = segments[3];
+          if (segments.length === 4 && request.method === "GET") {
+            const res = await supabaseRest(env, "/rest/v1/gachas", {
+              query: `?select=id,win_rate,is_active&id=eq.${encodeURIComponent(gachaId)}&limit=1`,
+            });
+            if (!res.ok) {
+              return jsonResponse({ error: "GACHA_LOOKUP_FAILED" }, { status: 500, headers: baseHeaders });
+            }
+            const data = await res.json();
+            if (!data?.length) {
+              return jsonResponse({ error: "NOT_FOUND" }, { status: 404, headers: baseHeaders });
+            }
+            return jsonResponse(data[0], { status: 200, headers: baseHeaders });
           }
-          const data = await res.json();
-          if (!data?.length) {
-            return jsonResponse({ error: "NOT_FOUND" }, { status: 404, headers: baseHeaders });
+          if (segments.length === 4 && request.method === "PATCH") {
+            let payload = {};
+            try {
+              payload = await request.json();
+            } catch {
+              return jsonResponse({ error: "INVALID_JSON" }, { status: 400, headers: baseHeaders });
+            }
+            const update = {};
+            if (payload.win_rate !== undefined) update.win_rate = payload.win_rate;
+            if (payload.is_active !== undefined) update.is_active = payload.is_active;
+            if (Object.keys(update).length === 0) {
+              return jsonResponse({ error: "NO_FIELDS" }, { status: 400, headers: baseHeaders });
+            }
+            const res = await supabaseRest(env, "/rest/v1/gachas", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json", Prefer: "return=representation" },
+              query: `?id=eq.${encodeURIComponent(gachaId)}`,
+              body: JSON.stringify(update),
+            });
+            if (!res.ok) {
+              return jsonResponse({ error: "GACHA_UPDATE_FAILED" }, { status: 500, headers: baseHeaders });
+            }
+            const data = await res.json();
+            return jsonResponse(data[0] || {}, { status: 200, headers: baseHeaders });
           }
-          return jsonResponse(data[0], { status: 200, headers: baseHeaders });
+          if (segments.length === 5 && segments[4] === "prizes" && request.method === "GET") {
+            const res = await supabaseRest(env, "/rest/v1/prizes", {
+              query: `?select=id,name,stock,weight,is_active,image_url&gacha_id=eq.${encodeURIComponent(
+                gachaId
+              )}&order=created_at.desc`,
+            });
+            if (!res.ok) {
+              return jsonResponse({ error: "PRIZES_LOOKUP_FAILED" }, { status: 500, headers: baseHeaders });
+            }
+            const data = await res.json();
+            return jsonResponse({ items: data }, { status: 200, headers: baseHeaders });
+          }
         }
-        if (segments.length === 4 && request.method === "PATCH") {
+
+        if (segments[2] === "prizes" && segments[3] && request.method === "PATCH") {
+          const prizeId = segments[3];
           let payload = {};
           try {
             payload = await request.json();
@@ -846,94 +887,61 @@ export default {
             return jsonResponse({ error: "INVALID_JSON" }, { status: 400, headers: baseHeaders });
           }
           const update = {};
-          if (payload.win_rate !== undefined) update.win_rate = payload.win_rate;
+          if (payload.name !== undefined) update.name = payload.name;
+          if (payload.stock !== undefined) update.stock = payload.stock;
+          if (payload.weight !== undefined) update.weight = payload.weight;
           if (payload.is_active !== undefined) update.is_active = payload.is_active;
+          if (payload.image_url !== undefined) update.image_url = payload.image_url;
           if (Object.keys(update).length === 0) {
             return jsonResponse({ error: "NO_FIELDS" }, { status: 400, headers: baseHeaders });
           }
-          const res = await supabaseRest(env, "/rest/v1/gachas", {
+          const res = await supabaseRest(env, "/rest/v1/prizes", {
             method: "PATCH",
             headers: { "Content-Type": "application/json", Prefer: "return=representation" },
-            query: `?id=eq.${encodeURIComponent(gachaId)}`,
+            query: `?id=eq.${encodeURIComponent(prizeId)}`,
             body: JSON.stringify(update),
           });
           if (!res.ok) {
-            return jsonResponse({ error: "GACHA_UPDATE_FAILED" }, { status: 500, headers: baseHeaders });
+            return jsonResponse({ error: "PRIZE_UPDATE_FAILED" }, { status: 500, headers: baseHeaders });
           }
           const data = await res.json();
           return jsonResponse(data[0] || {}, { status: 200, headers: baseHeaders });
         }
-        if (segments.length === 5 && segments[4] === "prizes" && request.method === "GET") {
-          const res = await supabaseRest(env, "/rest/v1/prizes", {
-            query: `?select=id,name,stock,weight,is_active,image_url&gacha_id=eq.${encodeURIComponent(
-              gachaId
-            )}&order=created_at.desc`,
-          });
-          if (!res.ok) {
-            return jsonResponse({ error: "PRIZES_LOOKUP_FAILED" }, { status: 500, headers: baseHeaders });
-          }
-          const data = await res.json();
-          return jsonResponse({ items: data }, { status: 200, headers: baseHeaders });
-        }
       }
 
-      if (segments[2] === "prizes" && segments[3] && request.method === "PATCH") {
-        const prizeId = segments[3];
-        let payload = {};
-        try {
-          payload = await request.json();
-        } catch {
-          return jsonResponse({ error: "INVALID_JSON" }, { status: 400, headers: baseHeaders });
+      if (url.pathname === "/api/spin") {
+        if (request.method === "POST") {
+          return handleSpin(request, env);
         }
-        const update = {};
-        if (payload.name !== undefined) update.name = payload.name;
-        if (payload.stock !== undefined) update.stock = payload.stock;
-        if (payload.weight !== undefined) update.weight = payload.weight;
-        if (payload.is_active !== undefined) update.is_active = payload.is_active;
-        if (payload.image_url !== undefined) update.image_url = payload.image_url;
-        if (Object.keys(update).length === 0) {
-          return jsonResponse({ error: "NO_FIELDS" }, { status: 400, headers: baseHeaders });
-        }
-        const res = await supabaseRest(env, "/rest/v1/prizes", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json", Prefer: "return=representation" },
-          query: `?id=eq.${encodeURIComponent(prizeId)}`,
-          body: JSON.stringify(update),
-        });
-        if (!res.ok) {
-          return jsonResponse({ error: "PRIZE_UPDATE_FAILED" }, { status: 500, headers: baseHeaders });
-        }
-        const data = await res.json();
-        return jsonResponse(data[0] || {}, { status: 200, headers: baseHeaders });
+        return jsonResponse(
+          { error: "METHOD_NOT_ALLOWED" },
+          { status: 405, headers: corsHeaders(allowOrigin) }
+        );
       }
-    }
 
-    if (url.pathname === "/api/spin") {
-      if (request.method === "POST") {
-        return handleSpin(request, env);
+      if (url.pathname === "/api/me" && request.method === "GET") {
+        return handleMe(request, env);
       }
-      return jsonResponse(
-        { error: "METHOD_NOT_ALLOWED" },
-        { status: 405, headers: corsHeaders(allowOrigin) }
-      );
-    }
 
-    if (url.pathname === "/api/me" && request.method === "GET") {
-      return handleMe(request, env);
-    }
+      if (url.pathname === "/api/claim-guest" && request.method === "POST") {
+        return handleClaimGuest(request, env);
+      }
 
-    if (url.pathname === "/api/claim-guest" && request.method === "POST") {
-      return handleClaimGuest(request, env);
-    }
+      if (url.pathname === "/api/last-spin" && request.method === "GET") {
+        return handleLastSpin(request, env);
+      }
 
-    if (url.pathname === "/api/last-spin" && request.method === "GET") {
-      return handleLastSpin(request, env);
-    }
+      if (url.pathname === "/api/track" && request.method === "POST") {
+        return handleTrack(request, env);
+      }
 
-    if (url.pathname === "/api/track" && request.method === "POST") {
-      return handleTrack(request, env);
+      return jsonResponse({ error: "NOT_FOUND" }, { status: 404, headers: corsHeaders(allowOrigin) });
+    } catch (e) {
+      console.error("SPIN ERROR", e);
+      return new Response(JSON.stringify({ error: "internal_error" }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
     }
-
-    return jsonResponse({ error: "NOT_FOUND" }, { status: 404, headers: corsHeaders(allowOrigin) });
   },
 };
