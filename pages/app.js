@@ -359,139 +359,138 @@ async function spin(options = { mode: "first" }) {
     return;
   }
   spinRunning = true;
-  const mode = options?.mode || "first";
-  if (spinButton) spinButton.disabled = true;
-  closeModals();
-  const loading = loadingMessages[Math.floor(Math.random() * loadingMessages.length)];
-  setResult({ title: loading, body: "", cta: "" });
+  try {
+    const mode = options?.mode || "first";
+    if (spinButton) spinButton.disabled = true;
+    closeModals();
+    const loading = loadingMessages[Math.floor(Math.random() * loadingMessages.length)];
+    setResult({ title: loading, body: "", cta: "" });
 
-  const token = await getAccessToken();
-  if (mode === "second" && !token) {
-    setResult({
-      title: "エラー",
-      body: "ログインが必要です。",
-      cta: "",
-    });
-    if (spinButton) spinButton.disabled = false;
-    spinRunning = false;
-    return;
-  }
-  const guestToken = window.localStorage.getItem("guest_token");
-  const headers = {
-    "Content-Type": "application/json",
-    ...(guestToken ? { "X-Guest-Token": guestToken } : {}),
-  };
-  if (token) headers.Authorization = `Bearer ${token}`;
-
-  console.log("[spin] guest_token (localStorage)", guestToken);
-  console.log("[spin] request headers", headers);
-  console.log("[spin] gacha_id", window.APP_CONFIG.GACHA_ID);
-
-  const response = await fetch(SPIN_API_URL, {
-    method: "POST",
-    headers,
-    credentials: "include",
-    body: JSON.stringify({ gacha_id: window.APP_CONFIG.GACHA_ID }),
-  });
-
-  if (!response.ok) {
-    let errorMessage = "通信に失敗しました。もう一度お試しください";
-    let errorDetail = "";
-    try {
-      const errorText = await response.text();
-      errorDetail = errorText ? `(${errorText})` : "";
-      console.error("spin error response:", errorText);
-    } catch {
-      // ignore parse errors
+    const token = await getAccessToken();
+    if (mode === "second" && !token) {
+      setResult({
+        title: "エラー",
+        body: "ログインが必要です。",
+        cta: "",
+      });
+      if (spinButton) spinButton.disabled = false;
+      return;
     }
-    setResult({
-      title: "エラー",
-      body: errorMessage,
-      cta: `<button class="btn" data-action="spin-again">もう一度回す</button>${
-        errorDetail ? `\n<div class="small">${errorDetail}</div>` : ""
-      }`,
-    });
-    if (spinButton) spinButton.disabled = false;
-    spinRunning = false;
-    return;
-  }
-
-  const data = await response.json();
-  console.log("[spin] raw response", data);
-  console.log("[spin] status", data?.status);
-  console.log("[spin] result fields", {
-    resultTitle: data?.resultTitle,
-    resultText: data?.resultText,
-    resultImage: data?.resultImage,
-    result: data?.result,
-    prize: data?.prize,
-  });
-  console.log("[spin] api result", data);
-  if (data?.guest_token) {
-    window.localStorage.setItem("guest_token", data.guest_token);
-    updateState((state) => ({ ...state, guest_token: data.guest_token }));
-  }
-  const freeResultNeedLogin = data.status === "FREE_RESULT_NEED_LOGIN";
-  if (data.status === "NEED_LOGIN_FREE") {
-    console.log("[BRANCH] NEED_LOGIN_FREE -> setResult", {
-      status: data.status,
-      result: data.result,
-    });
-    setResult({
-      title: "この先は、続きになります",
-      body: "さっきの続き、ちゃんと見せるね",
-      cta: `<button class="btn" data-action="open-login">続きへ進む</button>
-      <div class="small">ログインが必要です</div>`,
-    });
-    if (spinButton) spinButton.disabled = false;
-    spinRunning = false;
-    return;
-  }
-
-  if (data.status === "PAYWALL") {
-    if (mode === "first") openPaywallModal("lose");
-    if (spinButton) spinButton.disabled = false;
-    spinRunning = false;
-    return;
-  }
-
-  if (mode === "first" && (data.result === "WIN" || data.result === "LOSE")) {
-    window.localStorage.setItem("did_first_spin", "1");
-    console.log("[spin] did_first_spin saved");
-    sessionStorage.setItem("HAS_SPUN_ONCE", "1");
-    const spinResult = {
-      result: data.result,
-      redeem: data.redeem || null,
-      saved_at: Date.now(),
+    const guestToken = window.localStorage.getItem("guest_token");
+    const headers = {
+      "Content-Type": "application/json",
+      ...(guestToken ? { "X-Guest-Token": guestToken } : {}),
     };
-    sessionStorage.setItem("lastSpin", JSON.stringify(spinResult));
-    window.__LAST_SPIN = spinResult;
-    updateState((state) => ({
-      ...state,
-      firstSpin: {
-        done: true,
-        status: data.status || null,
-        result: data.result,
-        at: spinResult.saved_at,
-      },
-      ui: {
-        ...state.ui,
-        step: data.status === "FREE_RESULT_NEED_LOGIN" ? "NEED_LOGIN" : "SHOW_RESULT",
-      },
-    }));
-  }
-  if (mode === "second" && (data.result === "WIN" || data.result === "LOSE")) {
-    window.localStorage.removeItem("can_second_spin");
-  }
-  const normalized = normalizeSpinPayload(data);
-  renderSpinResult(normalized, token, mode);
-  if (freeResultNeedLogin && mode === "first" && resultCta) {
-    resultCta.innerHTML = `<button class="btn" data-action="open-login">続きへ進む</button>
-      <div class="small">ログインが必要です</div>`;
-  }
+    if (token) headers.Authorization = `Bearer ${token}`;
 
-  if (spinButton) spinButton.disabled = false;
-  spinRunning = false;
+    console.log("[spin] guest_token (localStorage)", guestToken);
+    console.log("[spin] request headers", headers);
+    console.log("[spin] gacha_id", window.APP_CONFIG.GACHA_ID);
+
+    const response = await fetch(SPIN_API_URL, {
+      method: "POST",
+      headers,
+      credentials: "include",
+      body: JSON.stringify({ gacha_id: window.APP_CONFIG.GACHA_ID }),
+    });
+
+    if (!response.ok) {
+      let errorMessage = "通信に失敗しました。もう一度お試しください";
+      let errorDetail = "";
+      try {
+        const errorText = await response.text();
+        errorDetail = errorText ? `(${errorText})` : "";
+        console.error("spin error response:", errorText);
+      } catch {
+        // ignore parse errors
+      }
+      setResult({
+        title: "エラー",
+        body: errorMessage,
+        cta: `<button class="btn" data-action="spin-again">もう一度回す</button>${
+          errorDetail ? `\n<div class="small">${errorDetail}</div>` : ""
+        }`,
+      });
+      if (spinButton) spinButton.disabled = false;
+      return;
+    }
+
+    const data = await response.json();
+    console.log("[spin] raw response", data);
+    console.log("[spin] status", data?.status);
+    console.log("[spin] result fields", {
+      resultTitle: data?.resultTitle,
+      resultText: data?.resultText,
+      resultImage: data?.resultImage,
+      result: data?.result,
+      prize: data?.prize,
+    });
+    console.log("[spin] api result", data);
+    if (data?.guest_token) {
+      window.localStorage.setItem("guest_token", data.guest_token);
+      updateState((state) => ({ ...state, guest_token: data.guest_token }));
+    }
+    const freeResultNeedLogin = data.status === "FREE_RESULT_NEED_LOGIN";
+    if (data.status === "NEED_LOGIN_FREE") {
+      console.log("[BRANCH] NEED_LOGIN_FREE -> setResult", {
+        status: data.status,
+        result: data.result,
+      });
+      setResult({
+        title: "この先は、続きになります",
+        body: "さっきの続き、ちゃんと見せるね",
+        cta: `<button class="btn" data-action="open-login">続きへ進む</button>
+      <div class="small">ログインが必要です</div>`,
+      });
+      if (spinButton) spinButton.disabled = false;
+      return;
+    }
+
+    if (data.status === "PAYWALL") {
+      if (mode === "first") openPaywallModal("lose");
+      if (spinButton) spinButton.disabled = false;
+      return;
+    }
+
+    if (mode === "first" && (data.result === "WIN" || data.result === "LOSE")) {
+      window.localStorage.setItem("did_first_spin", "1");
+      console.log("[spin] did_first_spin saved");
+      sessionStorage.setItem("HAS_SPUN_ONCE", "1");
+      const spinResult = {
+        result: data.result,
+        redeem: data.redeem || null,
+        saved_at: Date.now(),
+      };
+      sessionStorage.setItem("lastSpin", JSON.stringify(spinResult));
+      window.__LAST_SPIN = spinResult;
+      updateState((state) => ({
+        ...state,
+        firstSpin: {
+          done: true,
+          status: data.status || null,
+          result: data.result,
+          at: spinResult.saved_at,
+        },
+        ui: {
+          ...state.ui,
+          step: data.status === "FREE_RESULT_NEED_LOGIN" ? "NEED_LOGIN" : "SHOW_RESULT",
+        },
+      }));
+    }
+    if (mode === "second" && (data.result === "WIN" || data.result === "LOSE")) {
+      window.localStorage.removeItem("can_second_spin");
+    }
+    const normalized = normalizeSpinPayload(data);
+    renderSpinResult(normalized, token, mode);
+    if (freeResultNeedLogin && mode === "first" && resultCta) {
+      resultCta.innerHTML = `<button class="btn" data-action="open-login">続きへ進む</button>
+      <div class="small">ログインが必要です</div>`;
+    }
+
+    if (spinButton) spinButton.disabled = false;
+  } finally {
+    spinRunning = false;
+  }
 }
 
 function renderSpinResult(data, token, mode = "first") {
