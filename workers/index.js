@@ -250,9 +250,16 @@ async function handleSpin(request, env) {
     ...corsHeaders(allowOrigin),
     "X-Worker-Deploy": DEPLOY_ID,
   };
+  const spinJson = (result, options = {}) => {
+    console.log("SPIN RESPONSE", result);
+    return jsonResponse(result, options);
+  };
 
-  const envError = ensureSupabaseEnv(env, baseHeaders);
-  if (envError) return envError;
+  try {
+    const envError = ensureSupabaseEnv(env, baseHeaders);
+    if (envError) {
+      return spinJson({ error: "MISSING_SUPABASE_ENV" }, { status: 500, headers: baseHeaders });
+    }
 
   const url = new URL(request.url);
   let gachaId = url.searchParams.get("gacha_id");
@@ -281,7 +288,7 @@ async function handleSpin(request, env) {
         contentType,
         length: 0,
       });
-      return jsonResponse(
+      return spinJson(
         { error: "EMPTY_BODY", debug: { contentType, bodyLen } },
         { status: 400, headers: baseHeaders }
       );
@@ -295,7 +302,7 @@ async function handleSpin(request, env) {
         contentType,
         length: rawBody.length,
       });
-      return jsonResponse(
+      return spinJson(
         { error: "INVALID_JSON", debug: { contentType, bodyLen } },
         { status: 400, headers: baseHeaders }
       );
@@ -310,7 +317,7 @@ async function handleSpin(request, env) {
       contentType,
       length: rawBody.length,
     });
-    return jsonResponse(
+    return spinJson(
       { error: "MISSING_GACHA_ID", debug: { contentType, bodyLen } },
       { status: 400, headers: baseHeaders }
     );
@@ -320,13 +327,13 @@ async function handleSpin(request, env) {
   const gacha = await getGacha(env, gachaId);
   console.log("gacha lookup", { found: !!gacha, gacha_id: gachaId });
   if (!gacha) {
-    return jsonResponse(
+    return spinJson(
       { status: "ERROR", code: "GACHA_NOT_FOUND" },
       { status: 404, headers: baseHeaders }
     );
   }
   if (!gacha.is_active) {
-    return jsonResponse(
+    return spinJson(
       { status: "ERROR", code: "GACHA_INACTIVE" },
       { status: 200, headers: baseHeaders }
     );
@@ -338,7 +345,7 @@ async function handleSpin(request, env) {
     const token = authHeader.slice("Bearer ".length);
     userId = await supabaseAuthUser(env, token);
     if (!userId) {
-      return jsonResponse({ error: "UNAUTHORIZED" }, { status: 401, headers: baseHeaders });
+      return spinJson({ error: "UNAUTHORIZED" }, { status: 401, headers: baseHeaders });
     }
   }
 
@@ -360,11 +367,11 @@ async function handleSpin(request, env) {
       )}&limit=1`,
     });
     if (!existingRes.ok) {
-      return jsonResponse({ error: "RESULT_LOOKUP_FAILED" }, { status: 500, headers: baseHeaders, setCookie });
+      return spinJson({ error: "RESULT_LOOKUP_FAILED" }, { status: 500, headers: baseHeaders, setCookie });
     }
     const existing = await existingRes.json();
     if (Array.isArray(existing) && existing.length > 0) {
-      return jsonResponse({ error: "ALREADY_SPUN" }, { status: 409, headers: baseHeaders, setCookie });
+      return spinJson({ error: "ALREADY_SPUN" }, { status: 409, headers: baseHeaders, setCookie });
     }
   }
 
@@ -377,7 +384,7 @@ async function handleSpin(request, env) {
       query: `?select=used_at&gacha_id=eq.${encodeURIComponent(gachaId)}&guest_token_hash=eq.${encodeURIComponent(guestHash)}&limit=1`,
     });
     if (!usedRes.ok) {
-      return jsonResponse({ error: "GUEST_LOOKUP_FAILED" }, { status: 500, headers: baseHeaders, setCookie });
+      return spinJson({ error: "GUEST_LOOKUP_FAILED" }, { status: 500, headers: baseHeaders, setCookie });
     }
     const usedData = await usedRes.json();
     guestFreeUsedCount = Array.isArray(usedData) ? usedData.length : 0;
@@ -393,7 +400,7 @@ async function handleSpin(request, env) {
         userId,
       });
       if (!userId) {
-        return jsonResponse({ status: "NEED_LOGIN_FREE" }, { status: 200, headers: baseHeaders, setCookie });
+        return spinJson({ status: "NEED_LOGIN_FREE" }, { status: 200, headers: baseHeaders, setCookie });
       }
     } else {
       const markRes = await supabaseRest(env, "/rest/v1/guest_free_spins", {
@@ -406,7 +413,7 @@ async function handleSpin(request, env) {
         }),
       });
       if (!markRes.ok) {
-        return jsonResponse({ error: "GUEST_MARK_FAILED" }, { status: 500, headers: baseHeaders, setCookie });
+        return spinJson({ error: "GUEST_MARK_FAILED" }, { status: 500, headers: baseHeaders, setCookie });
       }
       freeResultNeedLogin = true;
       if (userId) {
@@ -420,7 +427,7 @@ async function handleSpin(request, env) {
       query: `?select=login_free_used&gacha_id=eq.${encodeURIComponent(gachaId)}&user_id=eq.${encodeURIComponent(userId)}&limit=1`,
     });
     if (!bonusRes.ok) {
-      return jsonResponse({ error: "BONUS_LOOKUP_FAILED" }, { status: 500, headers: baseHeaders, setCookie });
+      return spinJson({ error: "BONUS_LOOKUP_FAILED" }, { status: 500, headers: baseHeaders, setCookie });
     }
     const bonusData = await bonusRes.json();
     if (bonusData.length === 0) {
@@ -434,19 +441,19 @@ async function handleSpin(request, env) {
         }),
       });
       if (!insertRes.ok) {
-        return jsonResponse({ error: "BONUS_INSERT_FAILED" }, { status: 500, headers: baseHeaders, setCookie });
+        return spinJson({ error: "BONUS_INSERT_FAILED" }, { status: 500, headers: baseHeaders, setCookie });
       }
     } else if (bonusData[0].login_free_used) {
       const creditsRes = await supabaseRest(env, "/rest/v1/credits", {
         query: `?select=balance&user_id=eq.${encodeURIComponent(userId)}&limit=1`,
       });
       if (!creditsRes.ok) {
-        return jsonResponse({ error: "CREDITS_LOOKUP_FAILED" }, { status: 500, headers: baseHeaders, setCookie });
+        return spinJson({ error: "CREDITS_LOOKUP_FAILED" }, { status: 500, headers: baseHeaders, setCookie });
       }
       const creditsData = await creditsRes.json();
       const balance = creditsData[0]?.balance ?? 0;
       if (balance <= 0) {
-        return jsonResponse({ status: "PAYWALL" }, { status: 200, headers: baseHeaders, setCookie });
+        return spinJson({ status: "PAYWALL" }, { status: 200, headers: baseHeaders, setCookie });
       }
       const updateRes = await supabaseRest(env, "/rest/v1/credits", {
         method: "PATCH",
@@ -458,7 +465,7 @@ async function handleSpin(request, env) {
         }),
       });
       if (!updateRes.ok) {
-        return jsonResponse({ error: "CREDITS_UPDATE_FAILED" }, { status: 500, headers: baseHeaders, setCookie });
+        return spinJson({ error: "CREDITS_UPDATE_FAILED" }, { status: 500, headers: baseHeaders, setCookie });
       }
     }
   }
@@ -468,7 +475,7 @@ async function handleSpin(request, env) {
       query: `?select=login_free_used&gacha_id=eq.${encodeURIComponent(gachaId)}&user_id=eq.${encodeURIComponent(userId)}&limit=1`,
     });
     if (!checkBonusRes.ok) {
-      return jsonResponse({ error: "BONUS_RECHECK_FAILED" }, { status: 500, headers: baseHeaders, setCookie });
+      return spinJson({ error: "BONUS_RECHECK_FAILED" }, { status: 500, headers: baseHeaders, setCookie });
     }
     const checkBonus = await checkBonusRes.json();
     if (checkBonus.length > 0 && checkBonus[0].login_free_used === false) {
@@ -482,7 +489,7 @@ async function handleSpin(request, env) {
         }),
       });
       if (!markBonusRes.ok) {
-        return jsonResponse({ error: "BONUS_UPDATE_FAILED" }, { status: 500, headers: baseHeaders, setCookie });
+        return spinJson({ error: "BONUS_UPDATE_FAILED" }, { status: 500, headers: baseHeaders, setCookie });
       }
     }
   }
@@ -579,7 +586,7 @@ async function handleSpin(request, env) {
     if (!insertRes.ok) {
       const detail = await insertRes.text();
       console.error("gacha_results insert failed", detail);
-      return jsonResponse(
+      return spinJson(
         { error: "DB_INSERT_FAILED", detail },
         { status: 500, headers: baseHeaders, setCookie }
       );
@@ -602,7 +609,11 @@ async function handleSpin(request, env) {
     status: responseBody.status,
     result,
   });
-  return jsonResponse(responseBody, { status: 200, headers: baseHeaders, setCookie });
+  return spinJson(responseBody, { status: 200, headers: baseHeaders, setCookie });
+  } catch (error) {
+    console.error("spin handler error", error);
+    return spinJson({ error: "SPIN_FAILED" }, { status: 500, headers: baseHeaders });
+  }
 }
 
 async function handleMe(request, env) {
