@@ -1,6 +1,7 @@
 console.log("[GACHA-LAB] app.js version: 2026-02-02-1");
 
 console.log("[GLAB] app.js build=2026-01-13T23:59Z PAYWALL_SETRESULT_REMOVED");
+let spinRunning = false;
 const config = window.APP_CONFIG;
 const supabaseClient = window.supabase.createClient(
   config.SUPABASE_URL,
@@ -353,6 +354,11 @@ async function trackPaywallClick(reason) {
 }
 
 async function spin(options = { mode: "first" }) {
+  if (spinRunning) {
+    console.log("[SPIN BLOCKED] duplicate call");
+    return;
+  }
+  spinRunning = true;
   const mode = options?.mode || "first";
   if (spinButton) spinButton.disabled = true;
   closeModals();
@@ -367,6 +373,7 @@ async function spin(options = { mode: "first" }) {
       cta: "",
     });
     if (spinButton) spinButton.disabled = false;
+    spinRunning = false;
     return;
   }
   const guestToken = window.localStorage.getItem("guest_token");
@@ -405,6 +412,7 @@ async function spin(options = { mode: "first" }) {
       }`,
     });
     if (spinButton) spinButton.disabled = false;
+    spinRunning = false;
     return;
   }
 
@@ -436,12 +444,14 @@ async function spin(options = { mode: "first" }) {
       <div class="small">ログインが必要です</div>`,
     });
     if (spinButton) spinButton.disabled = false;
+    spinRunning = false;
     return;
   }
 
   if (data.status === "PAYWALL") {
     if (mode === "first") openPaywallModal("lose");
     if (spinButton) spinButton.disabled = false;
+    spinRunning = false;
     return;
   }
 
@@ -481,6 +491,7 @@ async function spin(options = { mode: "first" }) {
   }
 
   if (spinButton) spinButton.disabled = false;
+  spinRunning = false;
 }
 
 function renderSpinResult(data, token, mode = "first") {
