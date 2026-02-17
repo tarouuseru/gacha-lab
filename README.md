@@ -54,6 +54,12 @@ cd pages/public
 python -m http.server 8788
 ```
 
+### Pages Functions 環境変数
+Pages の Functions で `/api/spin` を動かす場合、以下を設定してください。
+
+- `SUPABASE_URL`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
 ## Cloudflare Pages 設定メモ
 - Framework preset: None
 - Build command: なし
