@@ -254,6 +254,18 @@ export async function onRequestPost(context) {
   return jsonResponse(responseBody, { status: 200, setCookie });
 }
 
+export async function onRequestOptions() {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Max-Age": "86400",
+    },
+  });
+}
+
 export async function onRequest(context) {
   if (context.request.method === "POST") {
     return onRequestPost(context);
