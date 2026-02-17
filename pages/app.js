@@ -148,6 +148,7 @@ function closeModals() {
 }
 
 function setResult({ title, body, cta }) {
+  window.__lastSetResultAt = Date.now();
   window.__srSeq = (window.__srSeq || 0) + 1;
   const __srId = window.__srSeq;
   const __srTs = Date.now();
@@ -621,6 +622,10 @@ async function restoreLastSpin() {
   window.__uiSeq = window.__uiSeq || 0;
   window.__rlSeq = window.__rlSeq || 0;
   const resetLastSpinUI = () => {
+    if (Date.now() - (window.__lastSetResultAt || 0) < 3000) {
+      console.log("[resetLastSpinUI] skipped (fresh result)");
+      return;
+    }
     window.__uiSeq += 1;
     const __uiId = window.__uiSeq;
     const __uiTs = Date.now();
