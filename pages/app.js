@@ -6,9 +6,9 @@ const supabaseClient = window.supabase.createClient(
   config.SUPABASE_URL,
   config.SUPABASE_ANON_KEY
 );
-const SPIN_API_URL = `${config.API_BASE}/api/spin`;
-const LAST_SPIN_URL = `${config.API_BASE}/api/last-spin`;
-const TRACK_API_URL = "https://gacha-mvp.glab-74.workers.dev/api/track";
+const SPIN_API_URL = "/api/spin";
+const LAST_SPIN_URL = "/api/last-spin";
+const TRACK_API_URL = "/api/track";
 const STATE_KEY = "gacha_state_v1";
 
 const spinButton = document.getElementById("spinButton");
