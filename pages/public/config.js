@@ -1,4 +1,4 @@
-const ORIGIN = "https://gacha-mvp.glab-74.workers.dev";
+const ORIGIN = "";
 
 window.APP_CONFIG = {
   SUPABASE_URL: "https://ljbfjlmtmaebexdwimhd.supabase.co",
