@@ -943,7 +943,10 @@ export default {
       console.error("SPIN ERROR", e);
       return new Response(JSON.stringify({ error: "internal_error" }), {
         status: 500,
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
       });
     }
   },
