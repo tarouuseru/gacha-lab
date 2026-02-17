@@ -3,9 +3,7 @@ const supabaseClient = window.supabase.createClient(
   config.SUPABASE_URL,
   config.SUPABASE_ANON_KEY
 );
-const SPIN_API_URL = `/api/spin?gacha_id=${encodeURIComponent(
-  config.GACHA_ID
-)}`;
+const SPIN_API_URL = `${config.API_BASE}/`;
 const LAST_SPIN_URL = "/api/last-spin";
 const TRACK_API_URL = "/api/track";
 
