@@ -22,7 +22,7 @@ function corsHeaders(origin) {
   const headers = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Credentials": "true",
-    "Access-Control-Allow-Methods": "GET, POST, PATCH, OPTIONS",
+    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Guest-Token",
     "Access-Control-Max-Age": "86400",
   };
@@ -34,7 +34,7 @@ function cors(res) {
   headers.set("Access-Control-Allow-Origin", "*");
   headers.set("Access-Control-Allow-Credentials", "true");
   headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Guest-Token");
-  headers.set("Access-Control-Allow-Methods", "GET, POST, PATCH, OPTIONS");
+  headers.set("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
   headers.set("Access-Control-Max-Age", "86400");
   headers.set("X-CORS-VER", CORS_VER);
   return new Response(res.body, {
@@ -44,17 +44,16 @@ function cors(res) {
   });
 }
 
-function preflight(request) {
-  const origin = request.headers.get("Origin") || "";
-  if (origin !== "https://gacha-lab.pages.dev") {
+function preflight(request, allowOrigin) {
+  if (!allowOrigin) {
     return new Response("CORS origin not allowed", { status: 403 });
   }
   return new Response(null, {
     status: 204,
     headers: {
-      "Access-Control-Allow-Origin": "https://gacha-lab.pages.dev",
+      "Access-Control-Allow-Origin": allowOrigin,
       "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, Authorization",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Guest-Token",
       "Access-Control-Allow-Credentials": "true",
       "Vary": "Origin",
     },
