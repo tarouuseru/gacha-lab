@@ -7,7 +7,6 @@ const supabaseClient = window.supabase.createClient(
   config.SUPABASE_URL,
   config.SUPABASE_ANON_KEY
 );
-const SPIN_API_URL = "https://gacha-mvp.glab-74.workers.dev/";
 const LAST_SPIN_URL = "/api/last-spin";
 const TRACK_API_URL = "/api/track";
 const STATE_KEY = "gacha_state_v1";
@@ -388,7 +387,7 @@ async function spin(options = { mode: "first" }) {
     console.log("[spin] request headers", headers);
     console.log("[spin] gacha_id", window.APP_CONFIG.GACHA_ID);
 
-    const response = await fetch(SPIN_API_URL, {
+    const response = await fetch("/api/spin", {
       method: "POST",
       headers,
       credentials: "include",

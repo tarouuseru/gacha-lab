@@ -3,7 +3,6 @@ const supabaseClient = window.supabase.createClient(
   config.SUPABASE_URL,
   config.SUPABASE_ANON_KEY
 );
-const SPIN_API_URL = `${config.API_BASE}/`;
 const LAST_SPIN_URL = "/api/last-spin";
 const TRACK_API_URL = "/api/track";
 
@@ -154,7 +153,7 @@ async function spin() {
   const headers = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const response = await fetch(SPIN_API_URL, {
+  const response = await fetch("/api/spin", {
     method: "POST",
     headers,
     credentials: "include",

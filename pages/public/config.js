@@ -1,4 +1,4 @@
-const ORIGIN = "";
+const ORIGIN = window.location.origin;
 
 window.APP_CONFIG = {
   SUPABASE_URL: "https://ljbfjlmtmaebexdwimhd.supabase.co",
