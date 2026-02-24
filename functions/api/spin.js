@@ -253,22 +253,22 @@ async function handlePost(request, env) {
   return jsonResponse(responseBody, { status: 200, setCookie });
 }
 
-export async function onRequest({ request, env }) {
-  if (request.method === "OPTIONS") {
-    return new Response(null, {
-      status: 204,
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
-        "Access-Control-Max-Age": "86400",
-      },
-    });
-  }
+export async function onRequestOptions({ request }) {
+  return new Response(null, {
+    status: 204,
+    headers: {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Guest-Token",
+      "Access-Control-Max-Age": "86400",
+    },
+  });
+}
 
-  if (request.method === "POST") {
-    return handlePost(request, env);
-  }
+export async function onRequestPost({ request, env }) {
+  return handlePost(request, env);
+}
 
+export async function onRequestGet() {
   return jsonResponse({ error: "METHOD_NOT_ALLOWED" }, { status: 405 });
 }
