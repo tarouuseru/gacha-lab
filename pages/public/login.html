@@ -18,45 +18,44 @@
     </header>
     <main>
       <section class="card hero">
-        <h1>この先は、続きになります</h1>
-        <p>さっきの続き、ちゃんと見せるね</p>
-        <form id="loginForm">
-          <input type="email" id="email" placeholder="you@example.com" required />
-          <button class="btn" type="submit">続きへ進む</button>
-        </form>
+        <h1>惜しい…！つづきが気になる？</h1>
+        <p>この先で結果が確定するよ</p>
+        <button class="btn" id="googleLoginButton" type="button">つづきを見る</button>
         <div class="status" id="loginStatus"></div>
-        <div class="small">ログインが必要です</div>
+        <div class="small"></div>
       </section>
     </main>
 
     <script src="./config.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
-      const config = window.APP_CONFIG;
-      const supabaseClient = window.supabase.createClient(
-        config.SUPABASE_URL,
-        config.SUPABASE_ANON_KEY
-      );
+      const config = window.APP_CONFIG || {};
+      const { SUPABASE_URL, SUPABASE_ANON_KEY } = config;
+      const supabaseClient =
+        SUPABASE_URL && SUPABASE_ANON_KEY
+          ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+          : null;
 
-      const form = document.getElementById("loginForm");
+      const loginButton = document.getElementById("googleLoginButton");
       const status = document.getElementById("loginStatus");
 
-      form.addEventListener("submit", async (event) => {
-        event.preventDefault();
-        status.textContent = "送信中...";
-        const email = document.getElementById("email").value.trim();
-        const next = new URLSearchParams(window.location.search).get("next") || "/index.html";
-        const redirectTo = `https://gacha-lab.pages.dev/auth-callback.html?next=${encodeURIComponent(next)}`;
+      loginButton.addEventListener("click", async () => {
+        if (!supabaseClient) {
+          status.textContent = "Supabaseの設定がありません。";
+          return;
+        }
+        status.textContent = "リダイレクト中...";
+        const redirectTo = "https://gacha-lab.pages.dev/login-callback.html";
 
-        const { error } = await supabaseClient.auth.signInWithOtp({
-          email,
-          options: { emailRedirectTo: redirectTo },
+        const { error } = await supabaseClient.auth.signInWithOAuth({
+          provider: "google",
+          options: { redirectTo },
         });
 
         if (error) {
-          status.textContent = `送信失敗: ${error.message}`;
+          status.textContent = `ログイン失敗: ${error.message}`;
         } else {
-          status.textContent = "メールを確認してください。";
+          status.textContent = "Googleログインに移動しています。";
         }
       });
     </script>

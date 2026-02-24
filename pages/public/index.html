@@ -32,12 +32,12 @@
 
     <div class="modal" id="loginModal">
       <div class="modal-card">
-        <h3>この先は、続きになります</h3>
-        <p class="preline">さっきの続き、ちゃんと見せるね</p>
+        <h3>惜しい…！つづきが気になる？</h3>
+        <p class="preline">この先で結果が確定するよ</p>
         <div class="modal-actions">
-          <a class="btn" href="./login.html">続きへ進む</a>
+          <a class="btn" href="./login.html">つづきを見る</a>
         </div>
-        <div class="small">ログインが必要です</div>
+        <div class="small"></div>
       </div>
     </div>
 
@@ -65,8 +65,20 @@
       </div>
     </div>
 
-    <script src="/config.js?v=20260104"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <script src="./app.js?v=20260104_2200"></script>
+    <script>
+      (function () {
+        const v = new URLSearchParams(location.search).get("v") || Date.now();
+
+        const config = document.createElement("script");
+        config.src = "./config.js?v=" + encodeURIComponent(v);
+        config.onload = function () {
+          const app = document.createElement("script");
+          app.src = "./app.js?v=" + encodeURIComponent(v);
+          document.head.appendChild(app);
+        };
+        document.head.appendChild(config);
+      })();
+    </script>
   </body>
 </html>
