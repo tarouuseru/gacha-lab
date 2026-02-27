@@ -59,7 +59,7 @@ export async function onRequest({ request, env }) {
 
   try {
     const res = await supabaseRest(env, "/rest/v1/gacha_results", {
-      query: `?select=created_at,result,result_type,redeem,payload&gacha_id=eq.${encodeURIComponent(
+      query: `?select=created_at,result_type,redeem,payload&gacha_id=eq.${encodeURIComponent(
         gachaId
       )}&guest_token=eq.${encodeURIComponent(guest)}&order=created_at.desc&limit=1`,
     });
@@ -92,7 +92,7 @@ export async function onRequest({ request, env }) {
         exists: true,
         status: "HAS_STATE",
         created_at: row.created_at || null,
-        result: row.result || row.result_type || null,
+        result: row.result_type || null,
         redeem: row.redeem || row.payload?.redeem || null,
       },
       200
