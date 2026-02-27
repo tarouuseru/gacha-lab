@@ -41,7 +41,7 @@ export async function onRequest({ request, env }) {
 
   // 直近のスピン結果を返す（テーブル名は spin.js に合わせてください：ここでは spin_results を仮定）
   // もしテーブル名が違って 400/404 になる場合は、次ステップで spin.js の参照箇所に合わせて修正します。
-  const res = await supabaseRest(env, "/rest/v1/spin_results", {
+  const res = await supabaseRest(env, "/rest/v1/gacha_results", {
     query: `?select=id,result,redeem,created_at&gacha_id=eq.${encodeURIComponent(gachaId)}&guest_token=eq.${encodeURIComponent(guest)}&order=created_at.desc&limit=1`,
   });
 
