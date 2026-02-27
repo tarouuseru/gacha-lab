@@ -3,7 +3,7 @@ const supabaseClient = window.supabase.createClient(
   config.SUPABASE_URL,
   config.SUPABASE_ANON_KEY
 );
-const LAST_SPIN_URL = "/api/last-spin";
+const LAST_SPIN_URL = "/api/last-spin?t=" + Date.now();
 const TRACK_API_URL = "/api/track";
 
 const spinButton = document.getElementById("spinButton");
