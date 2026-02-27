@@ -47,7 +47,9 @@ export async function onRequest({ request, env }) {
   }
 
   const res = await supabaseRest(env, "/rest/v1/gacha_results", {
-    query: `?select=*&gacha_id=eq.${encodeURIComponent(gachaId)}&guest_token=eq.${encodeURIComponent(guest)}&order=created_at.desc&limit=1`,
+    query: `?select=created_at,result,result_type,redeem,payload&gacha_id=eq.${encodeURIComponent(
+      gachaId
+    )}&guest_token=eq.${encodeURIComponent(guest)}&order=created_at.desc&limit=1`,
   });
 
   if (!res.ok) {
