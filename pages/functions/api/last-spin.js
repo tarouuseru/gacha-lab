@@ -59,5 +59,15 @@ export async function onRequest({ request, env }) {
     return jsonResponse({ exists: false, status: "NO_STATE" }, 200);
   }
 
-  return jsonResponse({ exists: true, status: "HAS_STATE", last: rows[0] }, 200);
+  const row = rows[0];
+  return jsonResponse(
+    {
+      exists: true,
+      status: "HAS_STATE",
+      created_at: row.created_at || null,
+      result: row.result || row.result_type || null,
+      redeem: row.redeem || row.payload?.redeem || null,
+    },
+    200
+  );
 }
