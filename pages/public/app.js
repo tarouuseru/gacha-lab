@@ -176,27 +176,10 @@ async function spin() {
 
     if (alreadySpun) {
       try {
-        const lastRes = await fetch(LAST_SPIN_URL, { credentials: "include" });
-        if (lastRes.ok) {
-          let lastData = null;
-          try {
-            lastData = await lastRes.json();
-          } catch {
-            lastData = null;
-          }
-          if (lastData?.exists && lastData?.result) {
-            renderSpinResult(
-              {
-                result: lastData.result,
-                redeem: lastData.redeem || null,
-              },
-              token
-            );
-            spinButton.disabled = false;
-            return;
-          }
-        }
+        await restoreLastSpin();
       } catch {}
+      spinButton.disabled = false;
+      return;
     }
     let errorMessage = "通信に失敗しました。もう一度お試しください";
     let errorDetail = "";
