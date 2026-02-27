@@ -161,13 +161,37 @@ async function spin() {
   });
 
   if (!response.ok) {
-    if (response.status === 409) {
+    let responseJson = null;
+    try {
+      responseJson = await response.clone().json();
+    } catch {
+      responseJson = null;
+    }
+
+    const alreadySpun =
+      response.status === 409 &&
+      (responseJson?.code === "ALREADY_SPUN" ||
+        responseJson?.status === "ALREADY_SPUN" ||
+        responseJson?.error === "ALREADY_SPUN");
+
+    if (alreadySpun) {
       try {
         const lastRes = await fetch(LAST_SPIN_URL, { credentials: "include" });
         if (lastRes.ok) {
-          const lastData = await lastRes.json();
-          if (lastData?.last) {
-            renderSpinResult(lastData.last, token);
+          let lastData = null;
+          try {
+            lastData = await lastRes.json();
+          } catch {
+            lastData = null;
+          }
+          if (lastData?.exists && lastData?.result) {
+            renderSpinResult(
+              {
+                result: lastData.result,
+                redeem: lastData.redeem || null,
+              },
+              token
+            );
             spinButton.disabled = false;
             return;
           }
