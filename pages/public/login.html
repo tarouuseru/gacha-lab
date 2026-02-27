@@ -45,7 +45,7 @@
           return;
         }
         status.textContent = "リダイレクト中...";
-        const redirectTo = "https://gacha-lab.pages.dev/login-callback.html";
+        const redirectTo = "https://gacha-lab-pages.pages.dev/login-callback.html";
 
         const { error } = await supabaseClient.auth.signInWithOAuth({
           provider: "google",
