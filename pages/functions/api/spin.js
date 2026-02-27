@@ -125,7 +125,7 @@ async function handlePost(request, env) {
   }
 
   const url = new URL(request.url);
-  let gachaId = url.searchParams.get("gacha_id");
+  let gachaId = url.searchParams.get("gacha_id") || env.DEFAULT_GACHA_ID || "";
   let rawBody = "";
   if (!gachaId) {
     rawBody = await request.text().catch(() => "");
