@@ -161,6 +161,19 @@ async function spin() {
   });
 
   if (!response.ok) {
+    if (response.status === 409) {
+      try {
+        const lastRes = await fetch(LAST_SPIN_URL, { credentials: "include" });
+        if (lastRes.ok) {
+          const lastData = await lastRes.json();
+          if (lastData?.last) {
+            renderSpinResult(lastData.last, token);
+            spinButton.disabled = false;
+            return;
+          }
+        }
+      } catch {}
+    }
     let errorMessage = "通信に失敗しました。もう一度お試しください";
     let errorDetail = "";
     try {
