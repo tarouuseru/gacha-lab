@@ -30,7 +30,7 @@ export async function onRequest({ request, env }) {
   const gachaId = url.searchParams.get("gacha_id") || env.DEFAULT_GACHA_ID || "";
 
   if (!gachaId) {
-    return new Response(JSON.stringify({ error: "MISSING_GACHA_ID" }), { status: 400, headers: JSON_HEADERS });
+    return new Response(JSON.stringify({ status: "NO_STATE" }), { status: 200, headers: JSON_HEADERS });
   }
 
   const cookies = parseCookies(request);
