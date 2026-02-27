@@ -26,7 +26,7 @@
       }
 
       function targetHomeUrl() {
-        return `${location.origin}/${location.search || ""}`;
+        return `${location.origin}/${location.search ? location.search : ""}`;
       }
 
       async function finalizeLogin() {
