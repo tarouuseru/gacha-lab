@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Logging in...</title>
+  </head>
+  <body>
+    <p>Logging in...</p>
+
+    <script src="./config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script>
+      const config = window.APP_CONFIG || {};
+      const { SUPABASE_URL, SUPABASE_ANON_KEY } = config;
+      const supabaseClient =
+        SUPABASE_URL && SUPABASE_ANON_KEY
+          ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+          : null;
+
+      function clearHashFromUrl() {
+        if (!location.hash) return;
+        const url = new URL(location.href);
+        url.hash = "";
+        history.replaceState({}, "", `${url.pathname}${url.search}`);
+      }
+
+      function targetHomeUrl() {
+        return `${location.origin}/${location.search || ""}`;
+      }
+
+      async function finalizeLogin() {
+        if (!supabaseClient) {
+          console.log("[oauth-callback] missing supabase config");
+          clearHashFromUrl();
+          location.replace(targetHomeUrl());
+          return;
+        }
+
+        const hashParams = new URLSearchParams(location.hash.replace(/^#/, ""));
+        const accessToken = hashParams.get("access_token");
+        const refreshToken = hashParams.get("refresh_token");
+
+        try {
+          if (accessToken && refreshToken) {
+            const { error } = await supabaseClient.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
+            if (error) {
+              console.log("[oauth-callback] setSession failed", error.message);
+            } else {
+              console.log("[oauth-callback] setSession success");
+            }
+          }
+        } catch (error) {
+          console.log("[oauth-callback] exception while setting session", error?.message || "unknown");
+        }
+
+        try {
+          const { data, error } = await supabaseClient.auth.getSession();
+          if (error) {
+            console.log("[oauth-callback] getSession failed", error.message);
+          } else if (data?.session) {
+            console.log("[oauth-callback] session confirmed");
+          } else {
+            console.log("[oauth-callback] session missing");
+          }
+        } catch (error) {
+          console.log("[oauth-callback] exception while reading session", error?.message || "unknown");
+        }
+
+        clearHashFromUrl();
+        location.replace(targetHomeUrl());
+      }
+
+      finalizeLogin();
+    </script>
+  </body>
+</html>
