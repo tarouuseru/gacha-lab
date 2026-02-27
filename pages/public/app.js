@@ -157,7 +157,7 @@ async function spin() {
     method: "POST",
     headers,
     credentials: "include",
-    body: JSON.stringify({ gacha_id: config.GACHA_ID }),
+    body: JSON.stringify(config.GACHA_ID ? { gacha_id: config.GACHA_ID } : {}),
   });
 
   if (!response.ok) {
