@@ -135,7 +135,7 @@ async function trackPaywallClick(reason) {
       body: JSON.stringify({
         event_name: "paywall_cta_click",
         reason,
-        gacha_id: config.GACHA_ID,
+        ...(config.GACHA_ID ? { gacha_id: config.GACHA_ID } : {}),
       }),
     });
   } catch {
