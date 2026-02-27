@@ -34,42 +34,57 @@ async function supabaseRest(env, path, { method = "GET", body, headers = {}, que
 
 export async function onRequest({ request, env }) {
   const url = new URL(request.url);
+  const debug = url.searchParams.get("debug") === "1";
+  const noState = (reason) =>
+    jsonResponse(
+      debug ? { exists: false, status: "NO_STATE", reason } : { exists: false, status: "NO_STATE" },
+      200
+    );
+
+  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
+    return noState("MISSING_SUPABASE_ENV");
+  }
+
   const gachaId = url.searchParams.get("gacha_id") || env.DEFAULT_GACHA_ID || "";
 
   if (!gachaId) {
-    return jsonResponse({ exists: false, status: "NO_STATE" }, 200);
+    return noState("MISSING_GACHA_ID");
   }
 
   const cookies = parseCookies(request);
   const guest = cookies.gl_guest || "";
   if (!guest) {
-    return jsonResponse({ exists: false, status: "NO_STATE" }, 200);
+    return noState("MISSING_GUEST_COOKIE");
   }
 
-  const res = await supabaseRest(env, "/rest/v1/gacha_results", {
-    query: `?select=created_at,result,result_type,redeem,payload&gacha_id=eq.${encodeURIComponent(
-      gachaId
-    )}&guest_token=eq.${encodeURIComponent(guest)}&order=created_at.desc&limit=1`,
-  });
+  try {
+    const res = await supabaseRest(env, "/rest/v1/gacha_results", {
+      query: `?select=created_at,result,result_type,redeem,payload&gacha_id=eq.${encodeURIComponent(
+        gachaId
+      )}&guest_token=eq.${encodeURIComponent(guest)}&order=created_at.desc&limit=1`,
+    });
 
-  if (!res.ok) {
-    return jsonResponse({ exists: false, status: "NO_STATE" }, 200);
+    if (!res.ok) {
+      return noState("SUPABASE_NOT_OK");
+    }
+
+    const rows = await res.json();
+    if (!rows?.length) {
+      return noState("EMPTY_ROWS");
+    }
+
+    const row = rows[0];
+    return jsonResponse(
+      {
+        exists: true,
+        status: "HAS_STATE",
+        created_at: row.created_at || null,
+        result: row.result || row.result_type || null,
+        redeem: row.redeem || row.payload?.redeem || null,
+      },
+      200
+    );
+  } catch {
+    return noState("EXCEPTION");
   }
-
-  const rows = await res.json();
-  if (!rows?.length) {
-    return jsonResponse({ exists: false, status: "NO_STATE" }, 200);
-  }
-
-  const row = rows[0];
-  return jsonResponse(
-    {
-      exists: true,
-      status: "HAS_STATE",
-      created_at: row.created_at || null,
-      result: row.result || row.result_type || null,
-      redeem: row.redeem || row.payload?.redeem || null,
-    },
-    200
-  );
 }
