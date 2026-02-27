@@ -34,27 +34,22 @@ async function supabaseRest(env, path, { method = "GET", body, headers = {}, que
 
 export async function onRequest({ request, env }) {
   const url = new URL(request.url);
-  const debug = url.searchParams.get("debug") === "1";
-  const noState = (reason) =>
-    jsonResponse(
-      debug ? { exists: false, status: "NO_STATE", reason } : { exists: false, status: "NO_STATE" },
-      200
-    );
+  const noState = () => jsonResponse({ exists: false, status: "NO_STATE" }, 200);
 
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
-    return noState("MISSING_SUPABASE_ENV");
+    return noState();
   }
 
   const gachaId = url.searchParams.get("gacha_id") || env.DEFAULT_GACHA_ID || "";
 
   if (!gachaId) {
-    return noState("MISSING_GACHA_ID");
+    return noState();
   }
 
   const cookies = parseCookies(request);
   const guest = cookies.gl_guest || "";
   if (!guest) {
-    return noState("MISSING_GUEST_COOKIE");
+    return noState();
   }
 
   try {
@@ -65,25 +60,12 @@ export async function onRequest({ request, env }) {
     });
 
     if (!res.ok) {
-      if (debug) {
-        const supabaseBody = await res.text().catch(() => "");
-        return jsonResponse(
-          {
-            exists: false,
-            status: "NO_STATE",
-            reason: "SUPABASE_NOT_OK",
-            supabase_status: res.status,
-            supabase_body: supabaseBody,
-          },
-          200
-        );
-      }
-      return noState("SUPABASE_NOT_OK");
+      return noState();
     }
 
     const rows = await res.json();
     if (!rows?.length) {
-      return noState("EMPTY_ROWS");
+      return noState();
     }
 
     const row = rows[0];
@@ -98,6 +80,6 @@ export async function onRequest({ request, env }) {
       200
     );
   } catch {
-    return noState("EXCEPTION");
+    return noState();
   }
 }
