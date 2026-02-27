@@ -1,5 +1,12 @@
 const JSON_HEADERS = { "Content-Type": "application/json; charset=utf-8" };
 
+function jsonResponse(body, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: JSON_HEADERS,
+  });
+}
+
 function parseCookies(request) {
   const cookie = request.headers.get("Cookie") || "";
   const entries = cookie.split(";").map((part) => part.trim()).filter(Boolean);
@@ -30,30 +37,27 @@ export async function onRequest({ request, env }) {
   const gachaId = url.searchParams.get("gacha_id") || env.DEFAULT_GACHA_ID || "";
 
   if (!gachaId) {
-    return new Response(JSON.stringify({ status: "NO_STATE" }), { status: 200, headers: JSON_HEADERS });
+    return jsonResponse({ exists: false, status: "NO_STATE" }, 200);
   }
 
   const cookies = parseCookies(request);
   const guest = cookies.gl_guest || "";
   if (!guest) {
-    return new Response(JSON.stringify({ status: "NO_STATE" }), { status: 200, headers: JSON_HEADERS });
+    return jsonResponse({ exists: false, status: "NO_STATE" }, 200);
   }
 
-  // 直近のスピン結果を返す（テーブル名は spin.js に合わせてください：ここでは spin_results を仮定）
-  // もしテーブル名が違って 400/404 になる場合は、次ステップで spin.js の参照箇所に合わせて修正します。
   const res = await supabaseRest(env, "/rest/v1/gacha_results", {
     query: `?select=*&gacha_id=eq.${encodeURIComponent(gachaId)}&guest_token=eq.${encodeURIComponent(guest)}&order=created_at.desc&limit=1`,
   });
 
   if (!res.ok) {
-    const text = await res.text();
-    return new Response(text, { status: res.status, headers: JSON_HEADERS });
+    return jsonResponse({ exists: false, status: "NO_STATE" }, 200);
   }
 
   const rows = await res.json();
   if (!rows?.length) {
-    return new Response(JSON.stringify({ status: "NO_STATE" }), { status: 200, headers: JSON_HEADERS });
+    return jsonResponse({ exists: false, status: "NO_STATE" }, 200);
   }
 
-  return new Response(JSON.stringify({ status: "HAS_STATE", last: rows[0] }), { status: 200, headers: JSON_HEADERS });
+  return jsonResponse({ exists: true, status: "HAS_STATE", last: rows[0] }, 200);
 }
