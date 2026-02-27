@@ -65,6 +65,19 @@ export async function onRequest({ request, env }) {
     });
 
     if (!res.ok) {
+      if (debug) {
+        const supabaseBody = await res.text().catch(() => "");
+        return jsonResponse(
+          {
+            exists: false,
+            status: "NO_STATE",
+            reason: "SUPABASE_NOT_OK",
+            supabase_status: res.status,
+            supabase_body: supabaseBody,
+          },
+          200
+        );
+      }
       return noState("SUPABASE_NOT_OK");
     }
 
