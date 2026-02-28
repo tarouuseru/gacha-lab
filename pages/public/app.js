@@ -153,6 +153,7 @@ async function spin() {
   const headers = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
 
+  if (window.gtag) window.gtag("event", "spin_1_click");
   const response = await fetch("/api/spin", {
     method: "POST",
     headers,
