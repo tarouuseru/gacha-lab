@@ -13,3 +13,6 @@ yarn-error.log*
 **/.wrangler/
 workers/node_modules/
 **/.DS_Store
+
+# Wrangler local artifacts
+workers/.wrangler/
