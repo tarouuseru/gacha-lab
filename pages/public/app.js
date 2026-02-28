@@ -285,7 +285,7 @@ async function restoreLastSpin() {
     const createdAt = data.created_at ? new Date(data.created_at) : null;
     if (!createdAt || Number.isNaN(createdAt.getTime())) return;
     const ageMs = Date.now() - createdAt.getTime();
-    if (ageMs > 24 * 60 * 60 * 1000) return;
+    if (ageMs > 48 * 60 * 60 * 1000) return;
     renderSpinResult(
       {
         result: data.result,
