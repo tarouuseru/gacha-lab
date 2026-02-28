@@ -174,6 +174,7 @@ async function spin() {
       (responseJson?.code === "ALREADY_SPUN" ||
         responseJson?.status === "ALREADY_SPUN" ||
         responseJson?.error === "ALREADY_SPUN");
+    if (alreadySpun && window.gtag) window.gtag("event", "spin_2_click");
 
     if (alreadySpun) {
       try {
