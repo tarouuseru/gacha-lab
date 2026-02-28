@@ -127,3 +127,6 @@ python -m http.server 8080
 ### 本番デプロイ時の変更点
 - `ALLOWED_ORIGIN` を本番ドメインに変更
 - Supabase Site URL / Redirect URLs を本番ドメインに追加
+
+## Cache busting
+確認・検証時は URL に `?v=YYYYMMDDHHmm` を付けて同一URLで再現できるようにする（例: `/?v=202602281340`）。
