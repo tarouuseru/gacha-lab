@@ -120,7 +120,9 @@ function jsonResponse(body, { status = 200, headers = {}, setCookie } = {}) {
 }
 
 async function handlePost(request, env) {
+  const rid = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(16).slice(2);
   if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
+    console.error("[spin] missing env", { rid });
     return jsonResponse({ error: "MISSING_SUPABASE_ENV" }, { status: 500 });
   }
 
@@ -155,6 +157,7 @@ async function handlePost(request, env) {
 
   const gacha = await getGacha(env, gachaId);
   if (!gacha) {
+    console.error("[spin] gacha not found", { rid, gachaId });
     return jsonResponse({ status: "ERROR", code: "GACHA_NOT_FOUND" }, { status: 404, setCookie });
   }
   if (!gacha.is_active) {
@@ -167,6 +170,7 @@ async function handlePost(request, env) {
     )}&limit=1`,
   });
   if (!existingRes.ok) {
+    console.error("[spin] result lookup failed", { rid, status: existingRes.status });
     return jsonResponse({ error: "RESULT_LOOKUP_FAILED" }, { status: 500, setCookie });
   }
   const existing = await existingRes.json();
