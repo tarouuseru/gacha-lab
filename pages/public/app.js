@@ -282,6 +282,9 @@ async function restoreLastSpin() {
     if (!res.ok) return;
     const data = await res.json();
     if (!data?.exists) return;
+    const createdAt0 = data.created_at ? new Date(data.created_at) : null;
+    const ageSec0 = createdAt0 && !Number.isNaN(createdAt0.getTime()) ? Math.floor((Date.now() - createdAt0.getTime())/1000) : null;
+    if (window.gtag) window.gtag("event", "restore_success", { result: data.result || null, age_sec: ageSec0, has_token: !!token });
     const createdAt = data.created_at ? new Date(data.created_at) : null;
     if (!createdAt || Number.isNaN(createdAt.getTime())) return;
     const ageMs = Date.now() - createdAt.getTime();
