@@ -199,7 +199,6 @@ async function handlePost(request, env) {
         redeem = null;
       } else {
         redeem = {
-          redeem_id: redeemRow.id,
           prize: {
             id: prize.id,
             name: prize.name,
