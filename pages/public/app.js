@@ -31,6 +31,8 @@ function openModal(modal) {
 }
 
 function openPaywallModal(reason) {
+  reason = (typeof reason === "string" && reason) ? reason : "unknown";
+  if (typeof window.gtag === "function") window.gtag("event", "paywall_view", { reason });
   if (paywallTitle && paywallBody) {
     if (reason === "win_locked") {
       paywallTitle.textContent = "当選は確定しています";
