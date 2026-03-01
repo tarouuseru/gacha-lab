@@ -42,6 +42,9 @@
         SUPABASE_URL && SUPABASE_ANON_KEY
           ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
           : null;
+      if (typeof window.gtag === "function") {
+        window.gtag("event", "paywall_view", { reason: "login_page" });
+      }
 
       const loginButton = document.getElementById("googleLoginButton");
       const status = document.getElementById("loginStatus");
