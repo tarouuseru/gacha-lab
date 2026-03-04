@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Creator Console</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+    <style>
+      .layout { display: grid; gap: 16px; }
+      .row { display: grid; gap: 8px; }
+      .row input, .row textarea, .row select {
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: 1px solid rgba(255,255,255,.2);
+        background: #0d1218;
+        color: var(--text);
+      }
+      .row textarea { min-height: 90px; resize: vertical; }
+      .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+      .series-card, .prize-card { border: 1px solid rgba(255,255,255,.14); border-radius: 12px; padding: 12px; display: grid; gap: 8px; }
+      .series-list, .prize-list { display: grid; gap: 10px; }
+      .inline { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+      .mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; word-break: break-all; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">GACHA LAB CREATOR</div>
+    </header>
+    <main>
+      <section class="card layout">
+        <h1>ログイン</h1>
+        <div class="actions">
+          <button class="btn" id="loginBtn" type="button">Googleログイン</button>
+          <button class="btn secondary" id="logoutBtn" type="button">ログアウト</button>
+        </div>
+        <div id="authStatus" class="small">未ログイン</div>
+      </section>
+
+      <section class="card layout">
+        <h2>規約同意</h2>
+        <p class="small">公開前に同意が必要です。</p>
+        <div class="actions">
+          <button class="btn" id="acceptTermsBtn" type="button">同意する</button>
+        </div>
+        <div id="termsStatus" class="small"></div>
+      </section>
+
+      <section class="card layout">
+        <h2>シリーズ作成</h2>
+        <div class="row">
+          <label>タイトル</label>
+          <input id="seriesTitle" type="text" />
+        </div>
+        <div class="row">
+          <label>説明</label>
+          <textarea id="seriesDescription"></textarea>
+        </div>
+        <div class="row">
+          <label>購入URL（外部決済）</label>
+          <input id="seriesPurchaseUrl" type="url" />
+        </div>
+        <div class="actions">
+          <button class="btn" id="createSeriesBtn" type="button">作成</button>
+          <button class="btn secondary" id="reloadSeriesBtn" type="button">再読み込み</button>
+        </div>
+        <div id="seriesStatus" class="small"></div>
+        <div id="seriesList" class="series-list"></div>
+      </section>
+
+      <section class="card layout">
+        <h2>景品管理</h2>
+        <div class="row">
+          <label>シリーズ</label>
+          <select id="targetSeries"></select>
+        </div>
+        <div class="actions">
+          <button class="btn" id="showAddModeBtn" type="button">景品追加モード</button>
+          <button class="btn secondary" id="showListModeBtn" type="button">景品一覧モード</button>
+        </div>
+        <div id="prizeAddForm">
+          <div class="inline">
+            <div class="row">
+              <label>name</label>
+              <input id="prizeName" type="text" />
+            </div>
+            <div class="row">
+              <label>image_url</label>
+              <input id="prizeImage" type="url" />
+            </div>
+            <div class="row">
+              <label>stock</label>
+              <input id="prizeStock" type="number" min="0" value="1" />
+            </div>
+            <div class="row">
+              <label>weight</label>
+              <input id="prizeWeight" type="number" min="1" value="1" />
+            </div>
+          </div>
+          <div class="actions">
+            <button class="btn" id="addPrizeBtn" type="button">景品追加</button>
+          </div>
+        </div>
+        <div id="prizeListPanel" style="display: none;">
+          <div class="actions">
+            <button class="btn secondary" id="loadPrizesBtn" type="button">景品一覧を更新</button>
+          </div>
+          <div id="prizeList" class="prize-list"></div>
+        </div>
+        <div id="prizeStatus" class="small"></div>
+      </section>
+    </main>
+
+    <script src="./config.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./creator.js"></script>
+  </body>
+</html>

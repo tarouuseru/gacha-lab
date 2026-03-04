@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Series Admin</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <style>
+      .grid { display: grid; gap: 12px; }
+      .row { display: grid; gap: 8px; }
+      input { padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,.2); background: #0d1218; color: var(--text); }
+      .mono { font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="brand">GACHA LAB ADMIN (SERIES)</div>
+    </header>
+    <main>
+      <section class="card grid">
+        <div class="row">
+          <label>API_BASE</label>
+          <input id="apiBase" type="text" />
+        </div>
+        <div class="row">
+          <label>ADMIN_TOKEN</label>
+          <input id="adminToken" type="password" />
+        </div>
+        <div class="row">
+          <label>Series ID</label>
+          <input id="seriesId" type="text" />
+        </div>
+        <div class="modal-actions">
+          <button class="btn" id="suspendBtn" type="button">Suspend Series</button>
+        </div>
+        <div id="status" class="small"></div>
+        <div id="output" class="mono"></div>
+      </section>
+    </main>
+    <script>
+      const apiBase = document.getElementById('apiBase');
+      const adminToken = document.getElementById('adminToken');
+      const seriesId = document.getElementById('seriesId');
+      const statusEl = document.getElementById('status');
+      const output = document.getElementById('output');
+      const key = {
+        apiBase: 'admin_series_api_base',
+        token: 'admin_series_token',
+      };
+      apiBase.value = localStorage.getItem(key.apiBase) || window.location.origin;
+      adminToken.value = localStorage.getItem(key.token) || '';
+
+      document.getElementById('suspendBtn').addEventListener('click', async () => {
+        const base = apiBase.value.trim().replace(/\/$/, '');
+        const token = adminToken.value.trim();
+        const id = seriesId.value.trim();
+        localStorage.setItem(key.apiBase, base);
+        localStorage.setItem(key.token, token);
+
+        if (!base || !token || !id) {
+          statusEl.textContent = 'API_BASE / TOKEN / Series ID が必要です';
+          return;
+        }
+
+        statusEl.textContent = 'suspending...';
+        try {
+          const res = await fetch(`${base}/api/admin/series/${encodeURIComponent(id)}/suspend`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) {
+            statusEl.textContent = `failed: ${res.status}`;
+            output.textContent = JSON.stringify(data);
+            return;
+          }
+          statusEl.textContent = 'suspended';
+          output.textContent = JSON.stringify(data);
+        } catch (e) {
+          statusEl.textContent = 'request failed';
+          output.textContent = String(e);
+        }
+      });
+    </script>
+  </body>
+</html>

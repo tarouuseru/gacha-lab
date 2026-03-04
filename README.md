@@ -127,3 +127,32 @@ python -m http.server 8080
 ### 本番デプロイ時の変更点
 - `ALLOWED_ORIGIN` を本番ドメインに変更
 - Supabase Site URL / Redirect URLs を本番ドメインに追加
+
+## Gate-1 (Creator SaaS) 追加メモ
+
+### SQL
+- `supabase_gate1.sql` を Supabase SQL Editor で実行
+
+### 主要API（Workers）
+- `POST /api/creator/terms/accept`
+- `POST /api/creator/series`
+- `GET /api/creator/series`
+- `PATCH /api/creator/series/:id`
+- `POST /api/creator/series/:id/prizes`
+- `GET /api/creator/series/:id/prizes`
+- `PATCH /api/creator/prizes/:id`
+- `GET /api/public/series/:slug`
+- `POST /api/public/series/:slug/spin`
+- `POST /api/admin/series/:id/suspend`
+
+### 追加ページ
+- `pages/public/creator.html`（売り手管理）
+- `pages/public/creator-callback.html`（OAuth callback）
+- `pages/public/s/index.html?slug=<slug>`（静的確認用）
+- `GET /s/:slug`（Workers配信の公開ページ）
+
+### 検証手順
+- `GATE1_E2E_CHECKLIST.md` を参照
+- APIスモーク確認: `scripts/gate1_smoke.sh`
+  - 例: `API_BASE=http://127.0.0.1:8787 USER_TOKEN=<token> ADMIN_TOKEN=<token> ./scripts/gate1_smoke.sh`
+  - `jq` が必要
