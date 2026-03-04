@@ -16,3 +16,4 @@ workers/node_modules/
 
 # Wrangler local artifacts
 workers/.wrangler/
+workers/.dev.vars
