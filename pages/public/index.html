@@ -51,7 +51,7 @@
         <p class="preline">さっきの“続き”は残してある。
 次で、案内まで進める。</p>
         <div class="modal-actions">
-          <a class="btn" href="https://example.com/paywall">続きへ進む（有料）</a>
+          <a class="btn" href="./login.html">続きへ進む（有料）</a>
         </div>
         <div class="small">※1回ごとに結果が確定します</div>
       </div>
@@ -70,6 +70,16 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-NQBP88PRDW"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag("js", new Date());
+      gtag("config", "G-NQBP88PRDW", { send_page_view: true });
+    </script>
+
     <script>
       (function () {
         const v = new URLSearchParams(location.search).get("v") || Date.now();

@@ -156,3 +156,6 @@ python -m http.server 8080
 - APIスモーク確認: `scripts/gate1_smoke.sh`
   - 例: `API_BASE=http://127.0.0.1:8787 USER_TOKEN=<token> ADMIN_TOKEN=<token> ./scripts/gate1_smoke.sh`
   - `jq` が必要
+
+## Cache busting
+確認・検証時は URL に `?v=YYYYMMDDHHmm` を付けて同一URLで再現できるようにする（例: `/?v=202602281340`）。

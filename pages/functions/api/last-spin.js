@@ -33,6 +33,7 @@ async function supabaseRest(env, path, { method = "GET", body, headers = {}, que
 }
 
 export async function onRequest({ request, env }) {
+  const rid = crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(16).slice(2);
   const url = new URL(request.url);
   const noState = () => jsonResponse({ exists: false, status: "NO_STATE" }, 200);
 
@@ -60,6 +61,7 @@ export async function onRequest({ request, env }) {
     });
 
     if (!res.ok) {
+      console.error("[last-spin] upstream error", { rid, status: res.status });
       return noState();
     }
 
@@ -79,7 +81,8 @@ export async function onRequest({ request, env }) {
       },
       200
     );
-  } catch {
+  } catch (e) {
+    console.error("[last-spin] exception", { rid, message: e && e.message });
     return noState();
   }
 }

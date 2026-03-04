@@ -31,6 +31,8 @@ function openModal(modal) {
 }
 
 function openPaywallModal(reason) {
+  reason = (typeof reason === "string" && reason) ? reason : "unknown";
+  if (typeof window.gtag === "function") window.gtag("event", "paywall_view", { reason });
   if (paywallTitle && paywallBody) {
     if (reason === "win_locked") {
       paywallTitle.textContent = "当選は確定しています";
@@ -153,6 +155,7 @@ async function spin() {
   const headers = { "Content-Type": "application/json" };
   if (token) headers.Authorization = `Bearer ${token}`;
 
+  if (window.gtag) window.gtag("event", "spin_1_click");
   const response = await fetch("/api/spin", {
     method: "POST",
     headers,
@@ -173,6 +176,7 @@ async function spin() {
       (responseJson?.code === "ALREADY_SPUN" ||
         responseJson?.status === "ALREADY_SPUN" ||
         responseJson?.error === "ALREADY_SPUN");
+    if (alreadySpun && window.gtag) window.gtag("event", "spin_2_click");
 
     if (alreadySpun) {
       try {
@@ -281,10 +285,13 @@ async function restoreLastSpin() {
     if (!res.ok) return;
     const data = await res.json();
     if (!data?.exists) return;
+    const createdAt0 = data.created_at ? new Date(data.created_at) : null;
+    const ageSec0 = createdAt0 && !Number.isNaN(createdAt0.getTime()) ? Math.floor((Date.now() - createdAt0.getTime())/1000) : null;
+    if (window.gtag) window.gtag("event", "restore_success", { result: data.result || null, age_sec: ageSec0, has_token: !!token });
     const createdAt = data.created_at ? new Date(data.created_at) : null;
     if (!createdAt || Number.isNaN(createdAt.getTime())) return;
     const ageMs = Date.now() - createdAt.getTime();
-    if (ageMs > 24 * 60 * 60 * 1000) return;
+    if (ageMs > 48 * 60 * 60 * 1000) return;
     renderSpinResult(
       {
         result: data.result,
