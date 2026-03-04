@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Series Public Page</title>
+    <link rel="stylesheet" href="../styles.css" />
+    <style>
+      .prize-grid { display: grid; grid-template-columns: repeat(auto-fit,minmax(160px,1fr)); gap: 12px; }
+      .prize-item { border: 1px solid rgba(255,255,255,.2); border-radius: 10px; padding: 10px; }
+      .prize-item img { width: 100%; border-radius: 8px; max-height: 140px; object-fit: cover; }
+      .result-box { min-height: 32px; font-weight: 700; }
+    </style>
+  </head>
+  <body>
+    <header><div class="brand">GACHA LAB SERIES</div></header>
+    <main>
+      <section class="card hero">
+        <h1 id="title">読み込み中...</h1>
+        <p id="description" class="small"></p>
+        <button id="spinButton" class="spin-btn">ガチャを回す</button>
+        <div id="result" class="result-box"></div>
+      </section>
+      <section class="card">
+        <h2>候補景品一覧</h2>
+        <div id="prizes" class="prize-grid"></div>
+      </section>
+      <section class="card">
+        <p id="disclaimer" class="small"></p>
+      </section>
+    </main>
+    <script src="../config.js"></script>
+    <script src="./s.js"></script>
+  </body>
+</html>

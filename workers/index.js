@@ -22,7 +22,7 @@ function corsHeaders(origin) {
   const headers = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Credentials": "true",
-    "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+    "Access-Control-Allow-Methods": "GET,POST,PATCH,OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Guest-Token",
     "Access-Control-Max-Age": "86400",
   };
@@ -34,7 +34,7 @@ function cors(res) {
   headers.set("Access-Control-Allow-Origin", "*");
   headers.set("Access-Control-Allow-Credentials", "true");
   headers.set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Guest-Token");
-  headers.set("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  headers.set("Access-Control-Allow-Methods", "GET,POST,PATCH,OPTIONS");
   headers.set("Access-Control-Max-Age", "86400");
   headers.set("X-CORS-VER", CORS_VER);
   return new Response(res.body, {
@@ -52,7 +52,7 @@ function preflight(request, allowOrigin) {
     status: 204,
     headers: {
       "Access-Control-Allow-Origin": allowOrigin,
-      "Access-Control-Allow-Methods": "GET,POST,OPTIONS",
+      "Access-Control-Allow-Methods": "GET,POST,PATCH,OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Guest-Token",
       "Access-Control-Allow-Credentials": "true",
       "Vary": "Origin",
@@ -234,6 +234,673 @@ function authorizeAdmin(request, env, headers) {
     return jsonResponse({ error: "UNAUTHORIZED" }, { status: 401, headers });
   }
   return null;
+}
+
+function getBearerToken(request) {
+  const authHeader = request.headers.get("Authorization") || "";
+  if (!authHeader.startsWith("Bearer ")) return null;
+  return authHeader.slice("Bearer ".length);
+}
+
+async function requireUserId(request, env, headers) {
+  const token = getBearerToken(request);
+  if (!token) {
+    return { error: jsonResponse({ error: "UNAUTHORIZED" }, { status: 401, headers }) };
+  }
+  const userId = await supabaseAuthUser(env, token);
+  if (!userId) {
+    return { error: jsonResponse({ error: "UNAUTHORIZED" }, { status: 401, headers }) };
+  }
+  return { userId };
+}
+
+async function parseJsonBody(request, headers) {
+  try {
+    return { data: await request.json() };
+  } catch {
+    return { error: jsonResponse({ error: "INVALID_JSON" }, { status: 400, headers }) };
+  }
+}
+
+function slugify(input) {
+  return String(input || "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 48);
+}
+
+function isHttpUrl(value) {
+  try {
+    const u = new URL(value);
+    return u.protocol === "http:" || u.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+async function ensureUniqueSlug(env, base) {
+  let candidate = base || `series-${randomString(6, "abcdefghijklmnopqrstuvwxyz0123456789")}`;
+  for (let i = 0; i < 10; i += 1) {
+    const res = await supabaseRest(env, "/rest/v1/series", {
+      query: `?select=id&slug=eq.${encodeURIComponent(candidate)}&limit=1`,
+    });
+    if (!res.ok) {
+      throw new Error("SLUG_LOOKUP_FAILED");
+    }
+    const data = await res.json();
+    if (!data?.length) return candidate;
+    candidate = `${base || "series"}-${randomString(4, "abcdefghijklmnopqrstuvwxyz0123456789")}`;
+  }
+  return `series-${randomString(10, "abcdefghijklmnopqrstuvwxyz0123456789")}`;
+}
+
+async function getSellerProfile(env, userId) {
+  const res = await supabaseRest(env, "/rest/v1/seller_profiles", {
+    query: `?select=user_id,status,terms_accepted_at&user_id=eq.${encodeURIComponent(userId)}&limit=1`,
+  });
+  if (!res.ok) return null;
+  const rows = await res.json();
+  return rows?.[0] || null;
+}
+
+async function ensureSellerProfile(env, userId) {
+  const current = await getSellerProfile(env, userId);
+  if (current) return current;
+  const res = await supabaseRest(env, "/rest/v1/seller_profiles", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Prefer: "return=representation" },
+    body: JSON.stringify({
+      user_id: userId,
+      status: "active",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }),
+  });
+  if (!res.ok) return null;
+  const rows = await res.json();
+  return rows?.[0] || null;
+}
+
+function canPublishSeries(seriesRow) {
+  return Boolean(
+    seriesRow?.title &&
+      seriesRow?.description &&
+      seriesRow?.category &&
+      seriesRow?.purchase_url
+  );
+}
+
+async function validatePublishable(env, seriesRow, userId) {
+  if (!canPublishSeries(seriesRow)) {
+    return { ok: false, code: "PUBLISH_INVALID_REQUIRED_FIELDS" };
+  }
+  const profile = await ensureSellerProfile(env, userId);
+  if (!profile?.terms_accepted_at) {
+    return { ok: false, code: "TERMS_NOT_ACCEPTED" };
+  }
+  const activeRes = await supabaseRest(env, "/rest/v1/series_prizes", {
+    query: `?select=id,stock&series_id=eq.${encodeURIComponent(seriesRow.id)}&is_active=is.true`,
+  });
+  if (!activeRes.ok) {
+    return { ok: false, code: "PRIZE_LOOKUP_FAILED" };
+  }
+  const active = await activeRes.json();
+  if (!active.length) {
+    return { ok: false, code: "PUBLISH_NO_ACTIVE_PRIZES" };
+  }
+  const hasStock = active.some((item) => Number(item.stock || 0) > 0);
+  if (!hasStock) {
+    return { ok: false, code: "PUBLISH_NO_PRIZE_STOCK" };
+  }
+  return { ok: true };
+}
+
+async function getOwnedSeries(env, seriesId, userId) {
+  const res = await supabaseRest(env, "/rest/v1/series", {
+    query: `?select=id,owner_user_id,title,description,category,purchase_url,status,slug,suspended_at&id=eq.${encodeURIComponent(
+      seriesId
+    )}&owner_user_id=eq.${encodeURIComponent(userId)}&limit=1`,
+  });
+  if (!res.ok) return null;
+  const rows = await res.json();
+  return rows?.[0] || null;
+}
+
+function ensureSeriesEditable(seriesRow, headers) {
+  if (seriesRow?.status === "suspended" || seriesRow?.suspended_at) {
+    return jsonResponse(
+      { error: "FORBIDDEN", code: "SERIES_SUSPENDED" },
+      { status: 403, headers }
+    );
+  }
+  return null;
+}
+
+async function fetchPublicSeries(env, slug) {
+  const res = await supabaseRest(env, "/rest/v1/series", {
+    query: `?select=id,slug,title,description,category,purchase_url,status,suspended_at&slug=eq.${encodeURIComponent(
+      slug
+    )}&status=eq.published&suspended_at=is.null&limit=1`,
+  });
+  if (!res.ok) return null;
+  const rows = await res.json();
+  return rows?.[0] || null;
+}
+
+async function fetchSeriesPrizes(env, seriesId, { activeOnly = false, stockOnly = false } = {}) {
+  const filters = [
+    `series_id=eq.${encodeURIComponent(seriesId)}`,
+    "order=created_at.desc",
+  ];
+  if (activeOnly) filters.push("is_active=is.true");
+  if (stockOnly) filters.push("stock=gt.0");
+  const query = `?select=id,series_id,name,image_url,stock,weight,is_active&${filters.join("&")}`;
+  const res = await supabaseRest(env, "/rest/v1/series_prizes", { query });
+  if (!res.ok) return null;
+  return res.json();
+}
+
+async function decrementSeriesPrizeStock(env, prize) {
+  const current = Number(prize.stock || 0);
+  if (current <= 0) return null;
+  const res = await supabaseRest(env, "/rest/v1/series_prizes", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", Prefer: "return=representation" },
+    query: `?id=eq.${encodeURIComponent(prize.id)}&stock=gt.0`,
+    body: JSON.stringify({ stock: current - 1, updated_at: new Date().toISOString() }),
+  });
+  if (!res.ok) return null;
+  const rows = await res.json();
+  return rows?.[0] || null;
+}
+
+async function handleCreatorApi(request, env, url, allowOrigin) {
+  const baseHeaders = corsHeaders(allowOrigin);
+  const envError = ensureSupabaseEnv(env, baseHeaders);
+  if (envError) return envError;
+
+  const auth = await requireUserId(request, env, baseHeaders);
+  if (auth.error) return auth.error;
+  const userId = auth.userId;
+  const profile = await ensureSellerProfile(env, userId);
+  if (!profile) {
+    return jsonResponse({ error: "PROFILE_SETUP_FAILED" }, { status: 500, headers: baseHeaders });
+  }
+
+  const segments = url.pathname.split("/").filter(Boolean);
+
+  if (segments[2] === "me" && request.method === "GET") {
+    return jsonResponse(
+      {
+        user_id: userId,
+        status: profile.status || "active",
+        terms_accepted_at: profile.terms_accepted_at || null,
+      },
+      { status: 200, headers: baseHeaders }
+    );
+  }
+
+  if (segments[2] === "terms" && segments[3] === "accept" && request.method === "POST") {
+    const res = await supabaseRest(env, "/rest/v1/seller_profiles", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Prefer: "return=representation" },
+      query: `?user_id=eq.${encodeURIComponent(userId)}`,
+      body: JSON.stringify({
+        terms_accepted_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }),
+    });
+    if (!res.ok) {
+      return jsonResponse({ error: "TERMS_ACCEPT_FAILED" }, { status: 500, headers: baseHeaders });
+    }
+    const rows = await res.json();
+    return jsonResponse(rows?.[0] || {}, { status: 200, headers: baseHeaders });
+  }
+
+  if (segments[2] === "series" && segments.length === 3 && request.method === "POST") {
+    const body = await parseJsonBody(request, baseHeaders);
+    if (body.error) return body.error;
+    const payload = body.data || {};
+
+    const title = String(payload.title || "").trim();
+    const description = String(payload.description || "").trim();
+    const purchaseUrl = String(payload.purchase_url || "").trim();
+    if (!title || !description || !purchaseUrl) {
+      return jsonResponse(
+        { error: "VALIDATION_FAILED", code: "MISSING_REQUIRED_FIELDS" },
+        { status: 400, headers: baseHeaders }
+      );
+    }
+    if (!isHttpUrl(purchaseUrl)) {
+      return jsonResponse(
+        { error: "VALIDATION_FAILED", code: "INVALID_PURCHASE_URL" },
+        { status: 400, headers: baseHeaders }
+      );
+    }
+    const category = "lure";
+    const baseSlug = slugify(title);
+    let slug = "";
+    try {
+      slug = await ensureUniqueSlug(env, baseSlug);
+    } catch {
+      return jsonResponse({ error: "SLUG_GENERATION_FAILED" }, { status: 500, headers: baseHeaders });
+    }
+
+    const res = await supabaseRest(env, "/rest/v1/series", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Prefer: "return=representation" },
+      body: JSON.stringify({
+        owner_user_id: userId,
+        slug,
+        title,
+        description,
+        category,
+        purchase_url: purchaseUrl,
+        status: "draft",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }),
+    });
+    if (!res.ok) {
+      return jsonResponse({ error: "SERIES_CREATE_FAILED" }, { status: 500, headers: baseHeaders });
+    }
+    const rows = await res.json();
+    return jsonResponse(rows?.[0] || {}, { status: 201, headers: baseHeaders });
+  }
+
+  if (segments[2] === "series" && segments.length === 3 && request.method === "GET") {
+    const res = await supabaseRest(env, "/rest/v1/series", {
+      query: `?select=id,slug,title,description,category,purchase_url,status,suspended_at,created_at,updated_at&owner_user_id=eq.${encodeURIComponent(
+        userId
+      )}&order=updated_at.desc`,
+    });
+    if (!res.ok) {
+      return jsonResponse({ error: "SERIES_LIST_FAILED" }, { status: 500, headers: baseHeaders });
+    }
+    const rows = await res.json();
+    return jsonResponse({ items: rows }, { status: 200, headers: baseHeaders });
+  }
+
+  if (segments[2] === "series" && segments[3] && segments.length === 4 && request.method === "PATCH") {
+    const seriesId = segments[3];
+    const owned = await getOwnedSeries(env, seriesId, userId);
+    if (!owned) {
+      return jsonResponse({ error: "NOT_FOUND_OR_FORBIDDEN" }, { status: 403, headers: baseHeaders });
+    }
+    const suspendError = ensureSeriesEditable(owned, baseHeaders);
+    if (suspendError) return suspendError;
+    const body = await parseJsonBody(request, baseHeaders);
+    if (body.error) return body.error;
+    const payload = body.data || {};
+
+    const update = {};
+    if (payload.title !== undefined) update.title = payload.title;
+    if (payload.title !== undefined) update.title = String(payload.title || "").trim();
+    if (payload.description !== undefined) update.description = String(payload.description || "").trim();
+    if (payload.purchase_url !== undefined) {
+      const purchaseUrl = String(payload.purchase_url || "").trim();
+      if (purchaseUrl && !isHttpUrl(purchaseUrl)) {
+        return jsonResponse(
+          { error: "VALIDATION_FAILED", code: "INVALID_PURCHASE_URL" },
+          { status: 400, headers: baseHeaders }
+        );
+      }
+      update.purchase_url = purchaseUrl;
+    }
+    if (payload.category !== undefined) update.category = "lure";
+    if (payload.status !== undefined) {
+      if (!["draft", "published"].includes(payload.status)) {
+        return jsonResponse(
+          { error: "VALIDATION_FAILED", code: "INVALID_STATUS" },
+          { status: 400, headers: baseHeaders }
+        );
+      }
+      update.status = payload.status;
+    }
+
+    const desiredStatus = update.status || owned.status;
+    const nextRow = { ...owned, ...update };
+    if (desiredStatus === "published") {
+      const valid = await validatePublishable(env, nextRow, userId);
+      if (!valid.ok) {
+        return jsonResponse(
+          { error: "VALIDATION_FAILED", code: valid.code },
+          { status: 400, headers: baseHeaders }
+        );
+      }
+    }
+    if (Object.keys(update).length === 0) {
+      return jsonResponse({ error: "NO_FIELDS" }, { status: 400, headers: baseHeaders });
+    }
+    update.updated_at = new Date().toISOString();
+    if (update.status !== "suspended" && owned.suspended_at) {
+      update.suspended_at = null;
+    }
+
+    const res = await supabaseRest(env, "/rest/v1/series", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Prefer: "return=representation" },
+      query: `?id=eq.${encodeURIComponent(seriesId)}&owner_user_id=eq.${encodeURIComponent(userId)}`,
+      body: JSON.stringify(update),
+    });
+    if (!res.ok) {
+      return jsonResponse({ error: "SERIES_UPDATE_FAILED" }, { status: 500, headers: baseHeaders });
+    }
+    const rows = await res.json();
+    return jsonResponse(rows?.[0] || {}, { status: 200, headers: baseHeaders });
+  }
+
+  if (segments[2] === "series" && segments[3] && segments[4] === "prizes") {
+    const seriesId = segments[3];
+    const owned = await getOwnedSeries(env, seriesId, userId);
+    if (!owned) {
+      return jsonResponse({ error: "NOT_FOUND_OR_FORBIDDEN" }, { status: 403, headers: baseHeaders });
+    }
+    const suspendError = ensureSeriesEditable(owned, baseHeaders);
+    if (suspendError) return suspendError;
+
+    if (request.method === "POST") {
+      const body = await parseJsonBody(request, baseHeaders);
+      if (body.error) return body.error;
+      const payload = body.data || {};
+      const stock = Number(payload.stock ?? 0);
+      const weight = Number(payload.weight ?? 1);
+      if (!payload.name || stock < 0 || weight < 1) {
+        return jsonResponse(
+          { error: "VALIDATION_FAILED", code: "INVALID_PRIZE_FIELDS" },
+          { status: 400, headers: baseHeaders }
+        );
+      }
+      const res = await supabaseRest(env, "/rest/v1/series_prizes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Prefer: "return=representation" },
+        body: JSON.stringify({
+          series_id: seriesId,
+          name: payload.name,
+          image_url: payload.image_url || "",
+          stock,
+          weight,
+          is_active: payload.is_active !== false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }),
+      });
+      if (!res.ok) {
+        return jsonResponse({ error: "PRIZE_CREATE_FAILED" }, { status: 500, headers: baseHeaders });
+      }
+      const rows = await res.json();
+      return jsonResponse(rows?.[0] || {}, { status: 201, headers: baseHeaders });
+    }
+
+    if (request.method === "GET") {
+      const prizes = await fetchSeriesPrizes(env, seriesId);
+      if (!prizes) {
+        return jsonResponse({ error: "PRIZE_LIST_FAILED" }, { status: 500, headers: baseHeaders });
+      }
+      return jsonResponse({ items: prizes }, { status: 200, headers: baseHeaders });
+    }
+  }
+
+  if (segments[2] === "prizes" && segments[3] && request.method === "PATCH") {
+    const prizeId = segments[3];
+    const lookup = await supabaseRest(env, "/rest/v1/series_prizes", {
+      query: `?select=id,series_id&id=eq.${encodeURIComponent(prizeId)}&limit=1`,
+    });
+    if (!lookup.ok) {
+      return jsonResponse({ error: "PRIZE_LOOKUP_FAILED" }, { status: 500, headers: baseHeaders });
+    }
+    const rows = await lookup.json();
+    const prize = rows?.[0];
+    if (!prize) {
+      return jsonResponse({ error: "NOT_FOUND" }, { status: 404, headers: baseHeaders });
+    }
+    const owned = await getOwnedSeries(env, prize.series_id, userId);
+    if (!owned) {
+      return jsonResponse({ error: "NOT_FOUND_OR_FORBIDDEN" }, { status: 403, headers: baseHeaders });
+    }
+    const suspendError = ensureSeriesEditable(owned, baseHeaders);
+    if (suspendError) return suspendError;
+    const body = await parseJsonBody(request, baseHeaders);
+    if (body.error) return body.error;
+    const payload = body.data || {};
+    const update = {};
+    if (payload.name !== undefined) update.name = payload.name;
+    if (payload.image_url !== undefined) update.image_url = payload.image_url;
+    if (payload.stock !== undefined) {
+      const stock = Number(payload.stock);
+      if (!Number.isFinite(stock) || stock < 0) {
+        return jsonResponse(
+          { error: "VALIDATION_FAILED", code: "INVALID_STOCK" },
+          { status: 400, headers: baseHeaders }
+        );
+      }
+      update.stock = stock;
+    }
+    if (payload.weight !== undefined) {
+      const weight = Number(payload.weight);
+      if (!Number.isFinite(weight) || weight < 1) {
+        return jsonResponse(
+          { error: "VALIDATION_FAILED", code: "INVALID_WEIGHT" },
+          { status: 400, headers: baseHeaders }
+        );
+      }
+      update.weight = weight;
+    }
+    if (payload.is_active !== undefined) update.is_active = Boolean(payload.is_active);
+    if (Object.keys(update).length === 0) {
+      return jsonResponse({ error: "NO_FIELDS" }, { status: 400, headers: baseHeaders });
+    }
+    update.updated_at = new Date().toISOString();
+
+    const res = await supabaseRest(env, "/rest/v1/series_prizes", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Prefer: "return=representation" },
+      query: `?id=eq.${encodeURIComponent(prizeId)}`,
+      body: JSON.stringify(update),
+    });
+    if (!res.ok) {
+      return jsonResponse({ error: "PRIZE_UPDATE_FAILED" }, { status: 500, headers: baseHeaders });
+    }
+    const updated = await res.json();
+    return jsonResponse(updated?.[0] || {}, { status: 200, headers: baseHeaders });
+  }
+
+  return jsonResponse({ error: "NOT_FOUND" }, { status: 404, headers: baseHeaders });
+}
+
+async function handlePublicSeriesGet(env, slug, headers) {
+  const row = await fetchPublicSeries(env, slug);
+  if (!row) {
+    return jsonResponse({ error: "NOT_FOUND" }, { status: 404, headers });
+  }
+  const prizes = await fetchSeriesPrizes(env, row.id, { activeOnly: true, stockOnly: true });
+  if (!prizes) {
+    return jsonResponse({ error: "PRIZE_LIST_FAILED" }, { status: 500, headers });
+  }
+  return jsonResponse(
+    {
+      id: row.id,
+      slug: row.slug,
+      title: row.title,
+      description: row.description,
+      category: row.category,
+      purchase_url: row.purchase_url,
+      disclaimer:
+        "購入・配送・返金・問い合わせは販売者の責任で行われます。運営は取引の当事者ではありません。",
+      prizes: prizes.map((item) => ({
+        id: item.id,
+        name: item.name,
+        image_url: item.image_url || null,
+        stock: item.stock,
+      })),
+    },
+    { status: 200, headers }
+  );
+}
+
+async function handlePublicSeriesSpin(request, env, slug, headers) {
+  const row = await fetchPublicSeries(env, slug);
+  if (!row) {
+    return jsonResponse({ error: "NOT_FOUND" }, { status: 404, headers });
+  }
+  const prizes = await fetchSeriesPrizes(env, row.id, { activeOnly: true, stockOnly: true });
+  if (!prizes || prizes.length === 0) {
+    return jsonResponse(
+      { error: "OUT_OF_STOCK", code: "NO_AVAILABLE_PRIZES" },
+      { status: 400, headers }
+    );
+  }
+
+  let selected = null;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const picked = chooseWeightedPrize(prizes);
+    if (!picked) break;
+    const updated = await decrementSeriesPrizeStock(env, picked);
+    if (updated) {
+      selected = { picked, updated };
+      break;
+    }
+  }
+  if (!selected) {
+    return jsonResponse(
+      { error: "OUT_OF_STOCK", code: "CONCURRENT_STOCK_EMPTY" },
+      { status: 409, headers }
+    );
+  }
+
+  const guestToken = getGuestTokenFromRequest(request) || generateGuestToken();
+  const guestHash = await sha256(guestToken);
+  await supabaseRest(env, "/rest/v1/series_spin_results", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      series_id: row.id,
+      prize_id: selected.picked.id,
+      visitor_token_hash: guestHash,
+      result: "WIN",
+      created_at: new Date().toISOString(),
+    }),
+  });
+
+  const setCookie = request.headers.get("X-Guest-Token")
+    ? null
+    : `gl_guest=${guestToken}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=604800`;
+
+  return jsonResponse(
+    {
+      result: "WIN",
+      message: "当選しました。販売者の案内に従って購入へ進んでください。",
+      prize: {
+        id: selected.picked.id,
+        name: selected.picked.name,
+        image_url: selected.picked.image_url || null,
+      },
+    },
+    { status: 200, headers, setCookie }
+  );
+}
+
+async function handlePublicApi(request, env, url, allowOrigin) {
+  const baseHeaders = corsHeaders(allowOrigin);
+  const envError = ensureSupabaseEnv(env, baseHeaders);
+  if (envError) return envError;
+
+  const segments = url.pathname.split("/").filter(Boolean);
+  if (segments[2] === "series" && segments[3]) {
+    const slug = segments[3];
+    if (request.method === "GET") {
+      return handlePublicSeriesGet(env, slug, baseHeaders);
+    }
+    if (request.method === "POST" && segments[4] === "spin") {
+      return handlePublicSeriesSpin(request, env, slug, baseHeaders);
+    }
+  }
+  return jsonResponse({ error: "NOT_FOUND" }, { status: 404, headers: baseHeaders });
+}
+
+function renderSeriesPageHtml(slug) {
+  return `<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Series</title>
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; background: #0b1015; color: #f0f4f8; }
+      main { max-width: 760px; margin: 0 auto; padding: 24px 16px 40px; }
+      .card { background: #121b24; border: 1px solid #243240; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+      .btn { background: #1f8bff; color: #fff; border: 0; border-radius: 10px; padding: 10px 16px; cursor: pointer; font-weight: 600; }
+      .muted { color: #9cb0c3; font-size: 13px; white-space: pre-line; }
+      .grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+      .prize { border: 1px solid #263746; border-radius: 10px; padding: 10px; background: #0f1720; }
+      img { width: 100%; border-radius: 8px; object-fit: cover; max-height: 140px; }
+      #result { font-weight: 700; margin-top: 12px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="card">
+        <h1 id="title">読み込み中...</h1>
+        <p id="description" class="muted"></p>
+        <button id="spin" class="btn">ガチャを回す</button>
+        <div id="result"></div>
+      </section>
+      <section class="card">
+        <h2>候補景品</h2>
+        <div id="prizes" class="grid"></div>
+      </section>
+      <section class="card">
+        <p id="disclaimer" class="muted"></p>
+      </section>
+    </main>
+    <script>
+      const slug = ${JSON.stringify(slug)};
+      const titleEl = document.getElementById("title");
+      const descEl = document.getElementById("description");
+      const resultEl = document.getElementById("result");
+      const prizesEl = document.getElementById("prizes");
+      const disclaimerEl = document.getElementById("disclaimer");
+      const spinBtn = document.getElementById("spin");
+      async function loadSeries() {
+        const res = await fetch("/api/public/series/" + encodeURIComponent(slug));
+        if (!res.ok) {
+          titleEl.textContent = "このシリーズは公開されていません";
+          spinBtn.disabled = true;
+          return;
+        }
+        const data = await res.json();
+        titleEl.textContent = data.title;
+        descEl.textContent = data.description || "";
+        disclaimerEl.textContent = data.disclaimer || "";
+        prizesEl.innerHTML = "";
+        (data.prizes || []).forEach((item) => {
+          const div = document.createElement("div");
+          div.className = "prize";
+          div.innerHTML = (item.image_url ? '<img src="' + item.image_url + '" alt="' + item.name + '" />' : "") + "<div>" + item.name + "</div>";
+          prizesEl.appendChild(div);
+        });
+      }
+      spinBtn.addEventListener("click", async () => {
+        spinBtn.disabled = true;
+        resultEl.textContent = "抽選中...";
+        const res = await fetch("/api/public/series/" + encodeURIComponent(slug) + "/spin", { method: "POST" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          resultEl.textContent = data.code || data.error || "抽選に失敗しました";
+          spinBtn.disabled = false;
+          return;
+        }
+        resultEl.textContent = "当選: " + (data.prize?.name || "-") + " / " + (data.message || "");
+        spinBtn.disabled = false;
+      });
+      loadSeries();
+    </script>
+  </body>
+</html>`;
 }
 
 async function handleSpin(request, env) {
@@ -804,8 +1471,8 @@ export default {
         status: 204,
         headers: {
           "Access-Control-Allow-Origin": "*",
-          "Access-Control-Allow-Methods": "POST, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type",
+          "Access-Control-Allow-Methods": "GET,POST,PATCH,OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Guest-Token",
         },
       });
     }
@@ -815,7 +1482,33 @@ export default {
       const allowOrigin = resolveAllowedOrigin(request.headers.get("Origin"), env.ALLOWED_ORIGIN);
 
       if (request.method === "OPTIONS") {
-        return preflight(request);
+        return preflight(request, allowOrigin);
+      }
+
+      if (request.method === "GET" && url.pathname.startsWith("/s/")) {
+        const slug = url.pathname.split("/").filter(Boolean)[1] || "";
+        if (!slug) {
+          return jsonResponse({ error: "NOT_FOUND" }, { status: 404, headers: corsHeaders(allowOrigin) });
+        }
+        const series = await fetchPublicSeries(env, slug);
+        if (!series) {
+          return jsonResponse({ error: "NOT_FOUND" }, { status: 404, headers: corsHeaders(allowOrigin) });
+        }
+        return new Response(renderSeriesPageHtml(slug), {
+          status: 200,
+          headers: {
+            "Content-Type": "text/html; charset=UTF-8",
+            ...corsHeaders(allowOrigin),
+          },
+        });
+      }
+
+      if (url.pathname.startsWith("/api/creator/")) {
+        return handleCreatorApi(request, env, url, allowOrigin);
+      }
+
+      if (url.pathname.startsWith("/api/public/")) {
+        return handlePublicApi(request, env, url, allowOrigin);
       }
 
       if (url.pathname.startsWith("/api/admin/")) {
@@ -878,6 +1571,28 @@ export default {
             const data = await res.json();
             return jsonResponse({ items: data }, { status: 200, headers: baseHeaders });
           }
+        }
+
+        if (segments[2] === "series" && segments[3] && segments[4] === "suspend" && request.method === "POST") {
+          const seriesId = segments[3];
+          const res = await supabaseRest(env, "/rest/v1/series", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json", Prefer: "return=representation" },
+            query: `?id=eq.${encodeURIComponent(seriesId)}`,
+            body: JSON.stringify({
+              status: "suspended",
+              suspended_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }),
+          });
+          if (!res.ok) {
+            return jsonResponse({ error: "SERIES_SUSPEND_FAILED" }, { status: 500, headers: baseHeaders });
+          }
+          const data = await res.json();
+          if (!data?.length) {
+            return jsonResponse({ error: "NOT_FOUND" }, { status: 404, headers: baseHeaders });
+          }
+          return jsonResponse({ ok: true, item: data[0] }, { status: 200, headers: baseHeaders });
         }
 
         if (segments[2] === "prizes" && segments[3] && request.method === "PATCH") {
