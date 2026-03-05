@@ -144,6 +144,8 @@ python -m http.server 8080
 - `GET /api/public/series/:slug`
 - `POST /api/public/series/:slug/spin`
 - `POST /api/admin/series/:id/suspend`
+- `POST /api/public/report`（Gate-2）
+- `GET /api/admin/reports`（Gate-2）
 
 ### 追加ページ
 - `pages/public/creator.html`（売り手管理）
