@@ -418,6 +418,42 @@ async function decrementSeriesPrizeStock(env, prize) {
   return rows?.[0] || null;
 }
 
+async function appendModerationAction(env, { targetType, targetId, action, reason, actor = "admin" }) {
+  const res = await supabaseRest(env, "/rest/v1/moderation_actions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      target_type: targetType,
+      target_id: targetId,
+      action,
+      reason: reason || null,
+      actor,
+      created_at: new Date().toISOString(),
+    }),
+  });
+  if (!res.ok) {
+    console.error("moderation_actions insert failed", await res.text());
+  }
+}
+
+async function appendAuditLog(env, { actor, action, targetType, targetId, payload = {} }) {
+  const res = await supabaseRest(env, "/rest/v1/audit_logs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      actor,
+      action,
+      target_type: targetType,
+      target_id: String(targetId),
+      payload,
+      created_at: new Date().toISOString(),
+    }),
+  });
+  if (!res.ok) {
+    console.error("audit_logs insert failed", await res.text());
+  }
+}
+
 async function handleCreatorApi(request, env, url, allowOrigin) {
   const baseHeaders = corsHeaders(allowOrigin);
   const envError = ensureSupabaseEnv(env, baseHeaders);
@@ -810,6 +846,55 @@ async function handlePublicApi(request, env, url, allowOrigin) {
   if (envError) return envError;
 
   const segments = url.pathname.split("/").filter(Boolean);
+  if (segments[2] === "report" && request.method === "POST") {
+    const body = await parseJsonBody(request, baseHeaders);
+    if (body.error) return body.error;
+    const payload = body.data || {};
+    const slug = String(payload.series_slug || "").trim();
+    const reasonCode = String(payload.reason_code || "").trim();
+    const detail = String(payload.detail || "").trim();
+    const reporterContact = String(payload.reporter_contact || "").trim();
+
+    if (!slug || !reasonCode) {
+      return jsonResponse(
+        { error: "VALIDATION_FAILED", code: "MISSING_REQUIRED_FIELDS" },
+        { status: 400, headers: baseHeaders }
+      );
+    }
+
+    const targetSeries = await fetchPublicSeries(env, slug);
+    if (!targetSeries) {
+      return jsonResponse({ error: "NOT_FOUND" }, { status: 404, headers: baseHeaders });
+    }
+
+    const insertRes = await supabaseRest(env, "/rest/v1/series_reports", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Prefer: "return=representation" },
+      body: JSON.stringify({
+        series_id: targetSeries.id,
+        reporter_contact: reporterContact || null,
+        reason_code: reasonCode,
+        detail: detail || null,
+        status: "open",
+        created_at: new Date().toISOString(),
+      }),
+    });
+    if (!insertRes.ok) {
+      return jsonResponse({ error: "REPORT_CREATE_FAILED" }, { status: 500, headers: baseHeaders });
+    }
+    const rows = await insertRes.json();
+
+    await appendAuditLog(env, {
+      actor: reporterContact || "public_reporter",
+      action: "report_create",
+      targetType: "series",
+      targetId: targetSeries.id,
+      payload: { reason_code: reasonCode, report_id: rows?.[0]?.id || null },
+    });
+
+    return jsonResponse({ ok: true, item: rows?.[0] || {} }, { status: 201, headers: baseHeaders });
+  }
+
   if (segments[2] === "series" && segments[3]) {
     const slug = segments[3];
     if (request.method === "GET") {
@@ -1519,6 +1604,26 @@ export default {
         if (authError) return authError;
 
         const segments = url.pathname.split("/").filter(Boolean);
+        if (segments[2] === "reports" && request.method === "GET") {
+          const statusFilter = (url.searchParams.get("status") || "").trim();
+          const queryParts = [
+            "select=id,series_id,reporter_contact,reason_code,detail,status,created_at,resolved_at",
+            "order=created_at.desc",
+            "limit=100",
+          ];
+          if (statusFilter) {
+            queryParts.push(`status=eq.${encodeURIComponent(statusFilter)}`);
+          }
+          const reportRes = await supabaseRest(env, "/rest/v1/series_reports", {
+            query: `?${queryParts.join("&")}`,
+          });
+          if (!reportRes.ok) {
+            return jsonResponse({ error: "REPORTS_LOOKUP_FAILED" }, { status: 500, headers: baseHeaders });
+          }
+          const items = await reportRes.json();
+          return jsonResponse({ items }, { status: 200, headers: baseHeaders });
+        }
+
         if (segments[2] === "gachas" && segments[3]) {
           const gachaId = segments[3];
           if (segments.length === 4 && request.method === "GET") {
@@ -1575,6 +1680,11 @@ export default {
 
         if (segments[2] === "series" && segments[3] && segments[4] === "suspend" && request.method === "POST") {
           const seriesId = segments[3];
+          const body = await parseJsonBody(request, baseHeaders);
+          let reason = null;
+          if (!body.error) {
+            reason = String(body.data?.reason || "").trim() || null;
+          }
           const res = await supabaseRest(env, "/rest/v1/series", {
             method: "PATCH",
             headers: { "Content-Type": "application/json", Prefer: "return=representation" },
@@ -1592,6 +1702,22 @@ export default {
           if (!data?.length) {
             return jsonResponse({ error: "NOT_FOUND" }, { status: 404, headers: baseHeaders });
           }
+
+          await appendModerationAction(env, {
+            targetType: "series",
+            targetId: seriesId,
+            action: "suspend",
+            reason,
+            actor: "admin",
+          });
+          await appendAuditLog(env, {
+            actor: "admin",
+            action: "series_suspend",
+            targetType: "series",
+            targetId: seriesId,
+            payload: { reason },
+          });
+
           return jsonResponse({ ok: true, item: data[0] }, { status: 200, headers: baseHeaders });
         }
 
