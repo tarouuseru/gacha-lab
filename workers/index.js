@@ -334,9 +334,17 @@ function canPublishSeries(seriesRow) {
   );
 }
 
+function isBillingActive(status) {
+  return status === "active" || status === "trialing";
+}
+
 async function validatePublishable(env, seriesRow, userId) {
   if (!canPublishSeries(seriesRow)) {
     return { ok: false, code: "PUBLISH_INVALID_REQUIRED_FIELDS" };
+  }
+  const subscription = await getSellerSubscriptionByUserId(env, userId);
+  if (!isBillingActive(subscription?.status || "inactive")) {
+    return { ok: false, code: "BILLING_INACTIVE" };
   }
   const profile = await ensureSellerProfile(env, userId);
   if (!profile?.terms_accepted_at) {
