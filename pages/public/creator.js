@@ -7,6 +7,9 @@ const logoutBtn = document.getElementById("logoutBtn");
 const authStatus = document.getElementById("authStatus");
 const acceptTermsBtn = document.getElementById("acceptTermsBtn");
 const termsStatus = document.getElementById("termsStatus");
+const billingStatus = document.getElementById("billingStatus");
+const startCheckoutBtn = document.getElementById("startCheckoutBtn");
+const openPortalBtn = document.getElementById("openPortalBtn");
 
 const seriesTitle = document.getElementById("seriesTitle");
 const seriesDescription = document.getElementById("seriesDescription");
@@ -71,6 +74,70 @@ async function authedFetch(path, options = {}) {
       ...(options.headers || {}),
     },
   });
+}
+
+async function fetchSubscriptionStatus() {
+  const res = await authedFetch("/api/billing/subscription", { method: "GET" });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || "SUBSCRIPTION_FETCH_FAILED");
+  }
+  return data;
+}
+
+async function refreshBillingStatus() {
+  const { data } = await supabaseClient.auth.getSession();
+  if (!data?.session) {
+    setText(billingStatus, "未ログイン");
+    if (startCheckoutBtn) startCheckoutBtn.disabled = true;
+    if (openPortalBtn) openPortalBtn.disabled = true;
+    return;
+  }
+
+  try {
+    const sub = await fetchSubscriptionStatus();
+    const active = sub.status === "active";
+    setText(
+      billingStatus,
+      `status: ${sub.status || "inactive"} / plan: ${sub.plan_code || "creator_monthly"}`
+    );
+    if (startCheckoutBtn) startCheckoutBtn.disabled = active;
+    if (openPortalBtn) openPortalBtn.disabled = !sub.stripe_customer_id;
+  } catch (error) {
+    setText(billingStatus, "契約状態の取得に失敗しました");
+    if (startCheckoutBtn) startCheckoutBtn.disabled = true;
+    if (openPortalBtn) openPortalBtn.disabled = true;
+  }
+}
+
+async function startCheckout() {
+  setText(billingStatus, "Checkout作成中...");
+  try {
+    const res = await authedFetch("/api/billing/checkout-session", { method: "POST", body: "{}" });
+    const data = await res.json();
+    if (!res.ok || !data?.url) {
+      setText(billingStatus, `Checkout失敗: ${data?.error || res.status}`);
+      return;
+    }
+    location.href = data.url;
+  } catch {
+    setText(billingStatus, "Checkout失敗");
+  }
+}
+
+async function openPortal() {
+  setText(billingStatus, "Portal作成中...");
+  try {
+    const res = await authedFetch("/api/billing/customer-portal", { method: "POST", body: "{}" });
+    const data = await res.json();
+    if (!res.ok || !data?.url) {
+      setText(billingStatus, `Portal失敗: ${data?.error || res.status}`);
+      return;
+    }
+    location.href = data.url;
+  } catch {
+    setText(billingStatus, "Portal失敗");
+  }
 }
 
 async function refreshAuthStatus() {
@@ -342,6 +409,7 @@ loginBtn.addEventListener("click", async () => {
 logoutBtn.addEventListener("click", async () => {
   await supabaseClient.auth.signOut();
   await refreshAuthStatus();
+  await refreshBillingStatus();
 });
 
 acceptTermsBtn.addEventListener("click", async () => {
@@ -365,9 +433,12 @@ loadPrizesBtn.addEventListener("click", loadPrizes);
 targetSeries.addEventListener("change", loadPrizes);
 showAddModeBtn.addEventListener("click", () => setPrizeMode("add"));
 showListModeBtn.addEventListener("click", () => loadPrizes());
+if (startCheckoutBtn) startCheckoutBtn.addEventListener("click", startCheckout);
+if (openPortalBtn) openPortalBtn.addEventListener("click", openPortal);
 
 document.addEventListener("DOMContentLoaded", async () => {
   setPrizeMode("add");
   await refreshAuthStatus();
+  await refreshBillingStatus();
   await loadSeries();
 });
