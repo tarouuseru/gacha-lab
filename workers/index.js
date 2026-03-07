@@ -454,6 +454,369 @@ async function appendAuditLog(env, { actor, action, targetType, targetId, payloa
   }
 }
 
+function unixToIsoOrNull(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return new Date(n * 1000).toISOString();
+}
+
+async function stripeRequest(env, path, { method = "POST", form = {} } = {}) {
+  if (!env.STRIPE_SECRET_KEY) {
+    return { ok: false, code: "MISSING_STRIPE_SECRET_KEY" };
+  }
+  const body = new URLSearchParams();
+  Object.entries(form).forEach(([k, v]) => {
+    if (v === undefined || v === null || v === "") return;
+    body.set(k, String(v));
+  });
+  const res = await fetch(`https://api.stripe.com${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: method === "GET" ? undefined : body.toString(),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    return {
+      ok: false,
+      code: "STRIPE_API_FAILED",
+      status: res.status,
+      stripe_error: json?.error?.message || "unknown_stripe_error",
+    };
+  }
+  return { ok: true, data: json };
+}
+
+async function getSellerSubscriptionByUserId(env, userId) {
+  const res = await supabaseRest(env, "/rest/v1/seller_subscriptions", {
+    query: `?select=user_id,stripe_customer_id,stripe_subscription_id,plan_code,status,current_period_end,cancel_at_period_end,created_at,updated_at&user_id=eq.${encodeURIComponent(
+      userId
+    )}&limit=1`,
+  });
+  if (!res.ok) return null;
+  const rows = await res.json();
+  return rows?.[0] || null;
+}
+
+async function getSellerSubscriptionByStripeSubscriptionId(env, stripeSubscriptionId) {
+  const res = await supabaseRest(env, "/rest/v1/seller_subscriptions", {
+    query: `?select=user_id,stripe_customer_id,stripe_subscription_id,plan_code,status,current_period_end,cancel_at_period_end,created_at,updated_at&stripe_subscription_id=eq.${encodeURIComponent(
+      stripeSubscriptionId
+    )}&limit=1`,
+  });
+  if (!res.ok) return null;
+  const rows = await res.json();
+  return rows?.[0] || null;
+}
+
+async function getSellerSubscriptionByStripeCustomerId(env, stripeCustomerId) {
+  const res = await supabaseRest(env, "/rest/v1/seller_subscriptions", {
+    query: `?select=user_id,stripe_customer_id,stripe_subscription_id,plan_code,status,current_period_end,cancel_at_period_end,created_at,updated_at&stripe_customer_id=eq.${encodeURIComponent(
+      stripeCustomerId
+    )}&limit=1`,
+  });
+  if (!res.ok) return null;
+  const rows = await res.json();
+  return rows?.[0] || null;
+}
+
+async function upsertSellerSubscription(env, userId, update) {
+  const current = await getSellerSubscriptionByUserId(env, userId);
+  const payload = {
+    user_id: userId,
+    plan_code: "creator_monthly",
+    status: "inactive",
+    cancel_at_period_end: false,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    ...update,
+  };
+  if (current) {
+    const patchRes = await supabaseRest(env, "/rest/v1/seller_subscriptions", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", Prefer: "return=representation" },
+      query: `?user_id=eq.${encodeURIComponent(userId)}`,
+      body: JSON.stringify({ ...payload, created_at: current.created_at || payload.created_at }),
+    });
+    if (!patchRes.ok) return null;
+    const rows = await patchRes.json();
+    return rows?.[0] || null;
+  }
+  const insertRes = await supabaseRest(env, "/rest/v1/seller_subscriptions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Prefer: "return=representation" },
+    body: JSON.stringify(payload),
+  });
+  if (!insertRes.ok) return null;
+  const rows = await insertRes.json();
+  return rows?.[0] || null;
+}
+
+async function handleBillingApi(request, env, url, allowOrigin) {
+  const baseHeaders = corsHeaders(allowOrigin);
+  const envError = ensureSupabaseEnv(env, baseHeaders);
+  if (envError) return envError;
+
+  const auth = await requireUserId(request, env, baseHeaders);
+  if (auth.error) return auth.error;
+  const userId = auth.userId;
+  const segments = url.pathname.split("/").filter(Boolean);
+
+  if (segments[2] === "subscription" && request.method === "GET") {
+    const row = await getSellerSubscriptionByUserId(env, userId);
+    return jsonResponse(
+      {
+        user_id: userId,
+        status: row?.status || "inactive",
+        plan_code: row?.plan_code || "creator_monthly",
+        stripe_customer_id: row?.stripe_customer_id || null,
+        stripe_subscription_id: row?.stripe_subscription_id || null,
+        current_period_end: row?.current_period_end || null,
+        cancel_at_period_end: Boolean(row?.cancel_at_period_end),
+      },
+      { status: 200, headers: baseHeaders }
+    );
+  }
+
+  if (segments[2] === "checkout-session" && request.method === "POST") {
+    if (!env.STRIPE_PRICE_ID) {
+      return jsonResponse({ error: "MISSING_STRIPE_PRICE_ID" }, { status: 500, headers: baseHeaders });
+    }
+    if (!env.STRIPE_SUCCESS_URL || !env.STRIPE_CANCEL_URL) {
+      return jsonResponse(
+        { error: "MISSING_STRIPE_REDIRECT_URLS" },
+        { status: 500, headers: baseHeaders }
+      );
+    }
+
+    const current = await getSellerSubscriptionByUserId(env, userId);
+    let stripeCustomerId = current?.stripe_customer_id || null;
+
+    if (!stripeCustomerId) {
+      const customerCreate = await stripeRequest(env, "/v1/customers", {
+        form: {
+          "metadata[user_id]": userId,
+        },
+      });
+      if (!customerCreate.ok) {
+        return jsonResponse(
+          {
+            error: customerCreate.code,
+            stripe_error: customerCreate.stripe_error || null,
+          },
+          { status: 502, headers: baseHeaders }
+        );
+      }
+      stripeCustomerId = customerCreate.data.id;
+    }
+
+    const checkout = await stripeRequest(env, "/v1/checkout/sessions", {
+      form: {
+        mode: "subscription",
+        customer: stripeCustomerId,
+        "line_items[0][price]": env.STRIPE_PRICE_ID,
+        "line_items[0][quantity]": 1,
+        success_url: env.STRIPE_SUCCESS_URL,
+        cancel_url: env.STRIPE_CANCEL_URL,
+        allow_promotion_codes: "true",
+        client_reference_id: userId,
+        "metadata[user_id]": userId,
+      },
+    });
+    if (!checkout.ok) {
+      return jsonResponse(
+        {
+          error: checkout.code,
+          stripe_error: checkout.stripe_error || null,
+        },
+        { status: 502, headers: baseHeaders }
+      );
+    }
+
+    await upsertSellerSubscription(env, userId, {
+      stripe_customer_id: stripeCustomerId,
+      status: current?.status || "inactive",
+      updated_at: new Date().toISOString(),
+    });
+    await appendAuditLog(env, {
+      actor: userId,
+      action: "billing_checkout_session_create",
+      targetType: "user",
+      targetId: userId,
+      payload: { stripe_customer_id: stripeCustomerId, checkout_session_id: checkout.data.id },
+    });
+
+    return jsonResponse(
+      { ok: true, id: checkout.data.id, url: checkout.data.url },
+      { status: 200, headers: baseHeaders }
+    );
+  }
+
+  if (segments[2] === "customer-portal" && request.method === "POST") {
+    const current = await getSellerSubscriptionByUserId(env, userId);
+    const stripeCustomerId = current?.stripe_customer_id || null;
+    if (!stripeCustomerId) {
+      return jsonResponse({ error: "NO_STRIPE_CUSTOMER" }, { status: 400, headers: baseHeaders });
+    }
+    const portal = await stripeRequest(env, "/v1/billing_portal/sessions", {
+      form: {
+        customer: stripeCustomerId,
+        return_url: env.STRIPE_SUCCESS_URL || "http://localhost:8080/creator.html",
+      },
+    });
+    if (!portal.ok) {
+      return jsonResponse(
+        {
+          error: portal.code,
+          stripe_error: portal.stripe_error || null,
+        },
+        { status: 502, headers: baseHeaders }
+      );
+    }
+    await appendAuditLog(env, {
+      actor: userId,
+      action: "billing_portal_session_create",
+      targetType: "user",
+      targetId: userId,
+      payload: { stripe_customer_id: stripeCustomerId },
+    });
+    return jsonResponse(
+      { ok: true, url: portal.data.url },
+      { status: 200, headers: baseHeaders }
+    );
+  }
+
+  return jsonResponse({ error: "NOT_FOUND" }, { status: 404, headers: baseHeaders });
+}
+
+function timingSafeEqualHex(a, b) {
+  if (!a || !b || a.length !== b.length) return false;
+  let out = 0;
+  for (let i = 0; i < a.length; i += 1) {
+    out |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return out === 0;
+}
+
+async function hmacSha256Hex(secret, payload) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
+  return Array.from(new Uint8Array(sig))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function parseStripeSignatureHeader(header) {
+  const parts = String(header || "")
+    .split(",")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const out = { t: null, v1: [] };
+  for (const part of parts) {
+    const [k, v] = part.split("=", 2);
+    if (k === "t") out.t = v;
+    if (k === "v1") out.v1.push(v);
+  }
+  return out;
+}
+
+async function handleBillingWebhook(request, env, allowOrigin) {
+  const baseHeaders = corsHeaders(allowOrigin);
+  const envError = ensureSupabaseEnv(env, baseHeaders);
+  if (envError) return envError;
+
+  const rawBody = await request.text();
+  let event;
+
+  if (env.STRIPE_WEBHOOK_SECRET) {
+    const sigHeader = request.headers.get("Stripe-Signature");
+    if (!sigHeader) {
+      return jsonResponse({ error: "MISSING_STRIPE_SIGNATURE" }, { status: 400, headers: baseHeaders });
+    }
+    const parsed = parseStripeSignatureHeader(sigHeader);
+    if (!parsed.t || !parsed.v1.length) {
+      return jsonResponse({ error: "INVALID_STRIPE_SIGNATURE" }, { status: 400, headers: baseHeaders });
+    }
+    const signedPayload = `${parsed.t}.${rawBody}`;
+    const expected = await hmacSha256Hex(env.STRIPE_WEBHOOK_SECRET, signedPayload);
+    const matched = parsed.v1.some((sig) => timingSafeEqualHex(sig, expected));
+    if (!matched) {
+      return jsonResponse({ error: "INVALID_STRIPE_SIGNATURE" }, { status: 400, headers: baseHeaders });
+    }
+  }
+
+  try {
+    event = JSON.parse(rawBody);
+  } catch {
+    return jsonResponse({ error: "INVALID_JSON" }, { status: 400, headers: baseHeaders });
+  }
+
+  const type = event?.type || "";
+  const obj = event?.data?.object || {};
+  let targetUserId = null;
+
+  if (type === "checkout.session.completed") {
+    targetUserId = String(obj?.client_reference_id || obj?.metadata?.user_id || "").trim() || null;
+    if (targetUserId) {
+      await upsertSellerSubscription(env, targetUserId, {
+        stripe_customer_id: obj?.customer || null,
+        stripe_subscription_id: obj?.subscription || null,
+        status: "active",
+        cancel_at_period_end: false,
+        updated_at: new Date().toISOString(),
+      });
+    }
+  }
+
+  if (
+    type === "customer.subscription.created" ||
+    type === "customer.subscription.updated" ||
+    type === "customer.subscription.deleted"
+  ) {
+    const stripeSubscriptionId = String(obj?.id || "").trim();
+    const stripeCustomerId = String(obj?.customer || "").trim();
+    const bySubscription = stripeSubscriptionId
+      ? await getSellerSubscriptionByStripeSubscriptionId(env, stripeSubscriptionId)
+      : null;
+    const byCustomer = !bySubscription && stripeCustomerId
+      ? await getSellerSubscriptionByStripeCustomerId(env, stripeCustomerId)
+      : null;
+    targetUserId = bySubscription?.user_id || byCustomer?.user_id || null;
+    if (targetUserId) {
+      const normalizedStatus =
+        type === "customer.subscription.deleted"
+          ? "canceled"
+          : String(obj?.status || "inactive");
+      await upsertSellerSubscription(env, targetUserId, {
+        stripe_customer_id: stripeCustomerId || null,
+        stripe_subscription_id: stripeSubscriptionId || null,
+        status: normalizedStatus,
+        current_period_end: unixToIsoOrNull(obj?.current_period_end),
+        cancel_at_period_end: Boolean(obj?.cancel_at_period_end),
+        updated_at: new Date().toISOString(),
+      });
+    }
+  }
+
+  await appendAuditLog(env, {
+    actor: "stripe_webhook",
+    action: "billing_webhook",
+    targetType: "user",
+    targetId: targetUserId || "unknown",
+    payload: { event_type: type, event_id: event?.id || null },
+  });
+
+  return jsonResponse({ ok: true }, { status: 200, headers: baseHeaders });
+}
+
 async function handleCreatorApi(request, env, url, allowOrigin) {
   const baseHeaders = corsHeaders(allowOrigin);
   const envError = ensureSupabaseEnv(env, baseHeaders);
@@ -1594,6 +1957,14 @@ export default {
 
       if (url.pathname.startsWith("/api/public/")) {
         return handlePublicApi(request, env, url, allowOrigin);
+      }
+
+      if (url.pathname === "/api/billing/webhook" && request.method === "POST") {
+        return handleBillingWebhook(request, env, allowOrigin);
+      }
+
+      if (url.pathname.startsWith("/api/billing/")) {
+        return handleBillingApi(request, env, url, allowOrigin);
       }
 
       if (url.pathname.startsWith("/api/admin/")) {
