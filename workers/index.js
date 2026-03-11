@@ -2071,6 +2071,55 @@ export default {
           return jsonResponse({ items }, { status: 200, headers: baseHeaders });
         }
 
+        if (
+          segments[2] === "reports" &&
+          segments[3] &&
+          segments[4] === "resolve" &&
+          request.method === "POST"
+        ) {
+          const reportId = segments[3];
+          const body = await parseJsonBody(request, baseHeaders);
+          let note = null;
+          if (!body.error) {
+            note = String(body.data?.note || "").trim() || null;
+          }
+
+          const nowIso = new Date().toISOString();
+          const updateRes = await supabaseRest(env, "/rest/v1/series_reports", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json", Prefer: "return=representation" },
+            query: `?id=eq.${encodeURIComponent(reportId)}&status=eq.open`,
+            body: JSON.stringify({
+              status: "closed",
+              resolved_at: nowIso,
+            }),
+          });
+          if (!updateRes.ok) {
+            return jsonResponse({ error: "REPORT_RESOLVE_FAILED" }, { status: 500, headers: baseHeaders });
+          }
+          const updated = await updateRes.json();
+          if (!updated?.length) {
+            return jsonResponse(
+              { error: "NOT_FOUND_OR_ALREADY_RESOLVED" },
+              { status: 404, headers: baseHeaders }
+            );
+          }
+
+          const item = updated[0];
+          await appendAuditLog(env, {
+            actor: "admin",
+            action: "report_resolve",
+            targetType: "series",
+            targetId: item.series_id,
+            payload: {
+              report_id: item.id,
+              note,
+            },
+          });
+
+          return jsonResponse({ ok: true, item }, { status: 200, headers: baseHeaders });
+        }
+
         if (segments[2] === "gachas" && segments[3]) {
           const gachaId = segments[3];
           if (segments.length === 4 && request.method === "GET") {
