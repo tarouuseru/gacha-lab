@@ -462,6 +462,43 @@ async function appendAuditLog(env, { actor, action, targetType, targetId, payloa
   }
 }
 
+function getDailyLimit(env, key, fallback) {
+  const raw = env[key];
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.floor(parsed);
+}
+
+async function enforceDailyLimit(env, headers, bucketKey, limit) {
+  const res = await supabaseRest(env, "/rest/v1/rpc/increment_daily_usage", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      p_bucket_key: bucketKey,
+      p_limit: limit,
+    }),
+  });
+  if (!res.ok) {
+    return jsonResponse(
+      { error: "RATE_LIMIT_CHECK_FAILED" },
+      { status: 500, headers }
+    );
+  }
+  const payload = await res.json();
+  const row = Array.isArray(payload) ? payload[0] : payload;
+  if (!row?.allowed) {
+    return jsonResponse(
+      {
+        error: "RATE_LIMIT_EXCEEDED",
+        code: "DAILY_LIMIT_EXCEEDED",
+        limit,
+      },
+      { status: 429, headers }
+    );
+  }
+  return null;
+}
+
 function unixToIsoOrNull(value) {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return null;
@@ -589,6 +626,15 @@ async function handleBillingApi(request, env, url, allowOrigin) {
   }
 
   if (segments[2] === "checkout-session" && request.method === "POST") {
+    const checkoutLimit = getDailyLimit(env, "DAILY_LIMIT_BILLING_CHECKOUT", 20);
+    const checkoutLimitError = await enforceDailyLimit(
+      env,
+      baseHeaders,
+      `billing_checkout:${userId}`,
+      checkoutLimit
+    );
+    if (checkoutLimitError) return checkoutLimitError;
+
     if (!env.STRIPE_PRICE_ID) {
       return jsonResponse({ error: "MISSING_STRIPE_PRICE_ID" }, { status: 500, headers: baseHeaders });
     }
@@ -663,6 +709,15 @@ async function handleBillingApi(request, env, url, allowOrigin) {
   }
 
   if (segments[2] === "customer-portal" && request.method === "POST") {
+    const portalLimit = getDailyLimit(env, "DAILY_LIMIT_BILLING_PORTAL", 40);
+    const portalLimitError = await enforceDailyLimit(
+      env,
+      baseHeaders,
+      `billing_portal:${userId}`,
+      portalLimit
+    );
+    if (portalLimitError) return portalLimitError;
+
     const current = await getSellerSubscriptionByUserId(env, userId);
     const stripeCustomerId = current?.stripe_customer_id || null;
     if (!stripeCustomerId) {
@@ -1218,6 +1273,19 @@ async function handlePublicApi(request, env, url, allowOrigin) {
 
   const segments = url.pathname.split("/").filter(Boolean);
   if (segments[2] === "report" && request.method === "POST") {
+    const clientIp =
+      request.headers.get("CF-Connecting-IP") ||
+      request.headers.get("X-Forwarded-For") ||
+      "unknown";
+    const reportLimit = getDailyLimit(env, "DAILY_LIMIT_PUBLIC_REPORT", 50);
+    const reportLimitError = await enforceDailyLimit(
+      env,
+      baseHeaders,
+      `public_report:${String(clientIp).split(",")[0].trim() || "unknown"}`,
+      reportLimit
+    );
+    if (reportLimitError) return reportLimitError;
+
     const body = await parseJsonBody(request, baseHeaders);
     if (body.error) return body.error;
     const payload = body.data || {};
