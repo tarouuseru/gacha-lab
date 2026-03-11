@@ -221,3 +221,17 @@ curl -X POST "http://127.0.0.1:8787/api/admin/reports/<REPORT_ID>/resolve" \
   - `.dev.vars` の `STRIPE_PRICE_ID` 未設定
 - `Session from session_id claim ... does not exist`
   - 古いSupabase access tokenを使っている。`creator.html` で再ログインして再取得する
+
+## Gate6-7 完了チェック
+
+- Gate6（API）
+  - `POST /api/admin/reports/:id/resolve` が `ok: true` を返す
+  - `series_reports.status` が `closed` になる
+  - `series_reports.resolved_at` が入る
+  - `audit_logs` に `action=report_resolve` が記録される
+
+- Gate7（UI）
+  - `admin-series.html` で `Load Reports` が動く
+  - `open` の通報だけ `Resolve` ボタンを表示
+  - `closed` の通報は `already resolved` 表示（ボタン非表示）
+  - `admin-series.js` にスクリプト分離済み（埋め込みscriptなし）
