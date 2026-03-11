@@ -2068,7 +2068,29 @@ export default {
             return jsonResponse({ error: "REPORTS_LOOKUP_FAILED" }, { status: 500, headers: baseHeaders });
           }
           const items = await reportRes.json();
-          return jsonResponse({ items }, { status: 200, headers: baseHeaders });
+
+          const seriesIds = [...new Set((items || []).map((item) => item.series_id).filter(Boolean))];
+          let seriesById = new Map();
+          if (seriesIds.length > 0) {
+            const inClause = seriesIds.map((id) => encodeURIComponent(id)).join(",");
+            const seriesRes = await supabaseRest(env, "/rest/v1/series", {
+              query: `?select=id,slug,status&id=in.(${inClause})`,
+            });
+            if (seriesRes.ok) {
+              const seriesRows = await seriesRes.json();
+              seriesById = new Map((seriesRows || []).map((row) => [row.id, row]));
+            }
+          }
+
+          const enriched = (items || []).map((item) => {
+            const s = seriesById.get(item.series_id);
+            return {
+              ...item,
+              series_slug: s?.slug || null,
+              series_status: s?.status || null,
+            };
+          });
+          return jsonResponse({ items: enriched }, { status: 200, headers: baseHeaders });
         }
 
         if (

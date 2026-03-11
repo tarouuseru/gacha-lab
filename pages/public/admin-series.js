@@ -96,10 +96,16 @@ async function loadReports() {
       const createdAt = item.created_at ? new Date(item.created_at).toLocaleString() : "-";
       const resolvedAt = item.resolved_at ? new Date(item.resolved_at).toLocaleString() : "-";
       const isOpen = item.status === "open";
+      const publicUrl = item.series_slug ? `${base}/s/${item.series_slug}` : null;
       el.innerHTML = `
         <div><strong>${escapeHtml(item.reason_code || "-")}</strong> (${escapeHtml(item.status || "-")})</div>
         <div>${escapeHtml(item.detail || "(no detail)")}</div>
         <div class="meta">id=${escapeHtml(item.id)} / series=${escapeHtml(item.series_id)}</div>
+        ${
+          publicUrl
+            ? `<div class="meta">public: <a href="${escapeHtml(publicUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(publicUrl)}</a></div>`
+            : ""
+        }
         <div class="meta">created=${escapeHtml(createdAt)} / resolved=${escapeHtml(resolvedAt)}</div>
         <div class="modal-actions">
           ${
