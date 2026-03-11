@@ -2239,6 +2239,49 @@ export default {
           return jsonResponse({ ok: true, item: data[0] }, { status: 200, headers: baseHeaders });
         }
 
+        if (segments[2] === "series" && segments[3] && segments[4] === "unsuspend" && request.method === "POST") {
+          const seriesId = segments[3];
+          const body = await parseJsonBody(request, baseHeaders);
+          let reason = null;
+          if (!body.error) {
+            reason = String(body.data?.reason || "").trim() || null;
+          }
+          const res = await supabaseRest(env, "/rest/v1/series", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json", Prefer: "return=representation" },
+            query: `?id=eq.${encodeURIComponent(seriesId)}`,
+            body: JSON.stringify({
+              status: "draft",
+              suspended_at: null,
+              updated_at: new Date().toISOString(),
+            }),
+          });
+          if (!res.ok) {
+            return jsonResponse({ error: "SERIES_UNSUSPEND_FAILED" }, { status: 500, headers: baseHeaders });
+          }
+          const data = await res.json();
+          if (!data?.length) {
+            return jsonResponse({ error: "NOT_FOUND" }, { status: 404, headers: baseHeaders });
+          }
+
+          await appendModerationAction(env, {
+            targetType: "series",
+            targetId: seriesId,
+            action: "unsuspend",
+            reason,
+            actor: "admin",
+          });
+          await appendAuditLog(env, {
+            actor: "admin",
+            action: "series_unsuspend",
+            targetType: "series",
+            targetId: seriesId,
+            payload: { reason },
+          });
+
+          return jsonResponse({ ok: true, item: data[0] }, { status: 200, headers: baseHeaders });
+        }
+
         if (segments[2] === "prizes" && segments[3] && request.method === "PATCH") {
           const prizeId = segments[3];
           let payload = {};

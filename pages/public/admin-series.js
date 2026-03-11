@@ -64,6 +64,37 @@ document.getElementById("suspendBtn").addEventListener("click", async () => {
   }
 });
 
+document.getElementById("unsuspendBtn").addEventListener("click", async () => {
+  const { base, token } = getAdminConfig();
+  const id = seriesId.value.trim();
+
+  if (!base || !token || !id) {
+    statusEl.textContent = "API_BASE / TOKEN / Series ID が必要です";
+    return;
+  }
+
+  statusEl.textContent = "unsuspending...";
+  try {
+    const res = await fetch(`${base}/api/admin/series/${encodeURIComponent(id)}/unsuspend`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      statusEl.textContent = `failed: ${res.status}`;
+      output.textContent = JSON.stringify(data);
+      return;
+    }
+    statusEl.textContent = "unsuspended";
+    output.textContent = JSON.stringify(data);
+  } catch (e) {
+    statusEl.textContent = "request failed";
+    output.textContent = String(e);
+  }
+});
+
 async function loadReports() {
   const { base, token } = getAdminConfig();
   const status = reportStatus.value;
