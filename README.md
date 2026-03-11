@@ -146,6 +146,7 @@ python -m http.server 8080
 - `POST /api/admin/series/:id/suspend`
 - `POST /api/public/report`（Gate-2）
 - `GET /api/admin/reports`（Gate-2）
+- `POST /api/admin/reports/:id/resolve`（Gate-6）
 
 ### 追加ページ
 - `pages/public/creator.html`（売り手管理）
@@ -161,3 +162,62 @@ python -m http.server 8080
 
 ## Cache busting
 確認・検証時は URL に `?v=YYYYMMDDHHmm` を付けて同一URLで再現できるようにする（例: `/?v=202602281340`）。
+
+## ローカル運用メモ（ハマりどころ対策）
+
+### 1) workers/.dev.vars の必須項目
+`workers/.dev.vars` はローカル専用です。以下が未設定だと `UNAUTHORIZED` や `MISSING_*` が発生します。
+
+```env
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<service-role-key>
+ADMIN_TOKEN=gl_admin_local_2026
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_PRICE_ID=price_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+```
+
+### 2) ローカル起動は --local を推奨
+OAuthの失敗ループを避けるため、まずはローカルモードで起動します。
+
+```bash
+cd workers
+wrangler dev --local --port 8787
+```
+
+`Address already in use` が出た場合:
+
+```bash
+lsof -i :8787
+kill -9 <PID>
+```
+
+### 3) public/creator の起動
+
+```bash
+cd pages/public
+python3 -m http.server 8080
+```
+
+- Creator URL: `http://localhost:8080/creator.html`
+- API_BASE は `http://127.0.0.1:8787` を使用
+
+### 4) Gate6: 通報クローズAPI
+管理者トークンで通報を解決状態にします。
+
+```bash
+curl -X POST "http://127.0.0.1:8787/api/admin/reports/<REPORT_ID>/resolve" \
+  -H "Authorization: Bearer <ADMIN_TOKEN>" \
+  -H "Content-Type: application/json" \
+  -d '{"note":"closed by admin"}'
+```
+
+成功時は `status: "closed"` と `resolved_at` が返ります。
+
+### 5) よくあるエラー
+- `UNAUTHORIZED`
+  - `ADMIN_TOKEN` が空、または `Authorization: Bearer ...` と一致していない
+- `MISSING_STRIPE_PRICE_ID`
+  - `.dev.vars` の `STRIPE_PRICE_ID` 未設定
+- `Session from session_id claim ... does not exist`
+  - 古いSupabase access tokenを使っている。`creator.html` で再ログインして再取得する
