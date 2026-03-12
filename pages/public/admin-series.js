@@ -12,6 +12,10 @@ const resolveNote = document.getElementById("resolveNote");
 const loadReportsBtn = document.getElementById("loadReportsBtn");
 const reportStatusText = document.getElementById("reportStatusText");
 const reportList = document.getElementById("reportList");
+const summaryTotalReports = document.getElementById("summaryTotalReports");
+const summaryOpenReports = document.getElementById("summaryOpenReports");
+const summarySuspendedSeries = document.getElementById("summarySuspendedSeries");
+const summaryStatus = document.getElementById("summaryStatus");
 
 const key = {
   apiBase: "admin_series_api_base",
@@ -36,6 +40,52 @@ function escapeHtml(value) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function setSummaryValues({ totalReports = "-", openReports = "-", suspendedSeries = "-" } = {}) {
+  summaryTotalReports.textContent = String(totalReports);
+  summaryOpenReports.textContent = String(openReports);
+  summarySuspendedSeries.textContent = String(suspendedSeries);
+}
+
+async function loadDashboardSummary() {
+  const { base, token } = getAdminConfig();
+  if (!base || !token) return;
+  summaryStatus.textContent = "loading dashboard summary...";
+  try {
+    const [seriesRes, reportRes] = await Promise.all([
+      fetch(`${base}/api/admin/series`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+      fetch(`${base}/api/admin/reports`, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+      }),
+    ]);
+    if (!seriesRes.ok || !reportRes.ok) {
+      summaryStatus.textContent = "dashboard summary failed";
+      return;
+    }
+    const seriesData = await seriesRes.json().catch(() => ({}));
+    const reportData = await reportRes.json().catch(() => ({}));
+    const seriesItems = seriesData.items || [];
+    const reportItems = reportData.items || [];
+
+    const suspendedSeriesCount = seriesItems.filter(
+      (item) => Boolean(item.suspended_at) || item.status === "suspended"
+    ).length;
+    const openReportCount = reportItems.filter((item) => item.status === "open").length;
+
+    setSummaryValues({
+      totalReports: reportItems.length,
+      openReports: openReportCount,
+      suspendedSeries: suspendedSeriesCount,
+    });
+    summaryStatus.textContent = "dashboard summary loaded";
+  } catch (e) {
+    summaryStatus.textContent = `dashboard summary failed: ${String(e)}`;
+  }
 }
 
 function getAdminConfig() {
@@ -91,6 +141,7 @@ async function loadSeries() {
     }
     cachedSeries = data.items || [];
     renderSeriesOptions(cachedSeries);
+    await loadDashboardSummary();
   } catch (e) {
     statusEl.textContent = "request failed";
     output.textContent = String(e);
@@ -252,6 +303,7 @@ async function loadReports() {
       }
       reportList.appendChild(el);
     });
+    await loadDashboardSummary();
   } catch (e) {
     reportStatusText.textContent = `request failed: ${String(e)}`;
   }
@@ -262,3 +314,5 @@ loadReportsBtn.addEventListener("click", loadReports);
 resolveNote.addEventListener("input", () => {
   localStorage.setItem(key.resolveNote, resolveNote.value || "");
 });
+
+loadDashboardSummary();
