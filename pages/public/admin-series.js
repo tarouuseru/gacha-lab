@@ -2,6 +2,7 @@ const apiBase = document.getElementById("apiBase");
 const adminToken = document.getElementById("adminToken");
 const seriesId = document.getElementById("seriesId");
 const seriesSelect = document.getElementById("seriesSelect");
+const seriesSearch = document.getElementById("seriesSearch");
 const statusEl = document.getElementById("status");
 const output = document.getElementById("output");
 const loadSeriesBtn = document.getElementById("loadSeriesBtn");
@@ -13,10 +14,14 @@ const reportList = document.getElementById("reportList");
 const key = {
   apiBase: "admin_series_api_base",
   token: "admin_series_token",
+  seriesSearch: "admin_series_search",
 };
 
 apiBase.value = localStorage.getItem(key.apiBase) || window.location.origin;
 adminToken.value = localStorage.getItem(key.token) || "";
+seriesSearch.value = localStorage.getItem(key.seriesSearch) || "";
+
+let cachedSeries = [];
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -36,8 +41,16 @@ function getAdminConfig() {
 }
 
 function renderSeriesOptions(items) {
+  const keyword = (seriesSearch.value || "").trim().toLowerCase();
+  const filtered = (items || []).filter((item) => {
+    if (!keyword) return true;
+    const title = String(item.title || "").toLowerCase();
+    const slug = String(item.slug || "").toLowerCase();
+    return title.includes(keyword) || slug.includes(keyword);
+  });
+
   seriesSelect.innerHTML = '<option value="">(select series)</option>';
-  (items || []).forEach((item) => {
+  filtered.forEach((item) => {
     const option = document.createElement("option");
     option.value = item.id;
     const suspended = item.suspended_at ? "suspended" : item.status;
@@ -45,6 +58,7 @@ function renderSeriesOptions(items) {
     option.dataset.id = item.id;
     seriesSelect.appendChild(option);
   });
+  statusEl.textContent = `series loaded: ${filtered.length}/${(items || []).length}`;
 }
 
 async function loadSeries() {
@@ -65,8 +79,8 @@ async function loadSeries() {
       output.textContent = JSON.stringify(data);
       return;
     }
-    renderSeriesOptions(data.items || []);
-    statusEl.textContent = `series loaded: ${(data.items || []).length}`;
+    cachedSeries = data.items || [];
+    renderSeriesOptions(cachedSeries);
   } catch (e) {
     statusEl.textContent = "request failed";
     output.textContent = String(e);
@@ -80,6 +94,11 @@ seriesSelect.addEventListener("change", () => {
 });
 
 loadSeriesBtn.addEventListener("click", loadSeries);
+
+seriesSearch.addEventListener("input", () => {
+  localStorage.setItem(key.seriesSearch, seriesSearch.value || "");
+  renderSeriesOptions(cachedSeries);
+});
 
 document.getElementById("suspendBtn").addEventListener("click", async () => {
   const { base, token } = getAdminConfig();

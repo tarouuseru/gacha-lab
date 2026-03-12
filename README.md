@@ -237,3 +237,4 @@ curl -X POST "http://127.0.0.1:8787/api/admin/reports/<REPORT_ID>/resolve" \
   - `open` の通報だけ `Resolve` ボタンを表示
   - `closed` の通報は `already resolved` 表示（ボタン非表示）
   - `admin-series.js` にスクリプト分離済み（埋め込みscriptなし）
+  - `Series Search` で `Series Select` を title/slug で絞り込み（Gate-10）
