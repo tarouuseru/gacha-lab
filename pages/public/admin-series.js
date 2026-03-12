@@ -3,6 +3,7 @@ const adminToken = document.getElementById("adminToken");
 const seriesId = document.getElementById("seriesId");
 const seriesSelect = document.getElementById("seriesSelect");
 const seriesSearch = document.getElementById("seriesSearch");
+const seriesStatusFilter = document.getElementById("seriesStatusFilter");
 const statusEl = document.getElementById("status");
 const output = document.getElementById("output");
 const loadSeriesBtn = document.getElementById("loadSeriesBtn");
@@ -15,11 +16,13 @@ const key = {
   apiBase: "admin_series_api_base",
   token: "admin_series_token",
   seriesSearch: "admin_series_search",
+  seriesStatus: "admin_series_status_filter",
 };
 
 apiBase.value = localStorage.getItem(key.apiBase) || window.location.origin;
 adminToken.value = localStorage.getItem(key.token) || "";
 seriesSearch.value = localStorage.getItem(key.seriesSearch) || "";
+seriesStatusFilter.value = localStorage.getItem(key.seriesStatus) || "";
 
 let cachedSeries = [];
 
@@ -42,7 +45,11 @@ function getAdminConfig() {
 
 function renderSeriesOptions(items) {
   const keyword = (seriesSearch.value || "").trim().toLowerCase();
+  const statusKeyword = (seriesStatusFilter.value || "").trim().toLowerCase();
   const filtered = (items || []).filter((item) => {
+    const effectiveStatus = (item.suspended_at ? "suspended" : item.status || "").toLowerCase();
+    const statusMatch = !statusKeyword || effectiveStatus === statusKeyword;
+    if (!statusMatch) return false;
     if (!keyword) return true;
     const title = String(item.title || "").toLowerCase();
     const slug = String(item.slug || "").toLowerCase();
@@ -97,6 +104,11 @@ loadSeriesBtn.addEventListener("click", loadSeries);
 
 seriesSearch.addEventListener("input", () => {
   localStorage.setItem(key.seriesSearch, seriesSearch.value || "");
+  renderSeriesOptions(cachedSeries);
+});
+
+seriesStatusFilter.addEventListener("change", () => {
+  localStorage.setItem(key.seriesStatus, seriesStatusFilter.value || "");
   renderSeriesOptions(cachedSeries);
 });
 
