@@ -15,6 +15,8 @@ const reportList = document.getElementById("reportList");
 const summaryTotalReports = document.getElementById("summaryTotalReports");
 const summaryOpenReports = document.getElementById("summaryOpenReports");
 const summarySuspendedSeries = document.getElementById("summarySuspendedSeries");
+const summaryOpenRate = document.getElementById("summaryOpenRate");
+const summaryLatestReport = document.getElementById("summaryLatestReport");
 const summaryStatus = document.getElementById("summaryStatus");
 
 const key = {
@@ -42,10 +44,18 @@ function escapeHtml(value) {
     .replaceAll("'", "&#39;");
 }
 
-function setSummaryValues({ totalReports = "-", openReports = "-", suspendedSeries = "-" } = {}) {
+function setSummaryValues({
+  totalReports = "-",
+  openReports = "-",
+  suspendedSeries = "-",
+  openRate = "-",
+  latestReport = "-",
+} = {}) {
   summaryTotalReports.textContent = String(totalReports);
   summaryOpenReports.textContent = String(openReports);
   summarySuspendedSeries.textContent = String(suspendedSeries);
+  summaryOpenRate.textContent = String(openRate);
+  summaryLatestReport.textContent = String(latestReport);
 }
 
 async function loadDashboardSummary() {
@@ -76,11 +86,21 @@ async function loadDashboardSummary() {
       (item) => Boolean(item.suspended_at) || item.status === "suspended"
     ).length;
     const openReportCount = reportItems.filter((item) => item.status === "open").length;
+    const openRate =
+      reportItems.length > 0 ? `${Math.round((openReportCount / reportItems.length) * 100)}%` : "0%";
+    const latestReportRow = [...reportItems]
+      .filter((item) => item.created_at)
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+    const latestReport = latestReportRow?.created_at
+      ? new Date(latestReportRow.created_at).toLocaleString()
+      : "-";
 
     setSummaryValues({
       totalReports: reportItems.length,
       openReports: openReportCount,
       suspendedSeries: suspendedSeriesCount,
+      openRate,
+      latestReport,
     });
     summaryStatus.textContent = "dashboard summary loaded";
   } catch (e) {
