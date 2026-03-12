@@ -8,6 +8,7 @@ const statusEl = document.getElementById("status");
 const output = document.getElementById("output");
 const loadSeriesBtn = document.getElementById("loadSeriesBtn");
 const reportStatus = document.getElementById("reportStatus");
+const resolveNote = document.getElementById("resolveNote");
 const loadReportsBtn = document.getElementById("loadReportsBtn");
 const reportStatusText = document.getElementById("reportStatusText");
 const reportList = document.getElementById("reportList");
@@ -17,12 +18,14 @@ const key = {
   token: "admin_series_token",
   seriesSearch: "admin_series_search",
   seriesStatus: "admin_series_status_filter",
+  resolveNote: "admin_series_resolve_note",
 };
 
 apiBase.value = localStorage.getItem(key.apiBase) || window.location.origin;
 adminToken.value = localStorage.getItem(key.token) || "";
 seriesSearch.value = localStorage.getItem(key.seriesSearch) || "";
 seriesStatusFilter.value = localStorage.getItem(key.seriesStatus) || "";
+resolveNote.value = localStorage.getItem(key.resolveNote) || "resolved from admin-series UI";
 
 let cachedSeries = [];
 
@@ -236,7 +239,7 @@ async function loadReports() {
               Authorization: `Bearer ${token}`,
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ note: "resolved from admin-series UI" }),
+            body: JSON.stringify({ note: String(resolveNote.value || "").trim() || null }),
           });
           if (!resolveRes.ok) {
             const err = await resolveRes.json().catch(() => ({}));
@@ -255,3 +258,7 @@ async function loadReports() {
 }
 
 loadReportsBtn.addEventListener("click", loadReports);
+
+resolveNote.addEventListener("input", () => {
+  localStorage.setItem(key.resolveNote, resolveNote.value || "");
+});

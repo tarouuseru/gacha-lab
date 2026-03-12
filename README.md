@@ -240,3 +240,4 @@ curl -X POST "http://127.0.0.1:8787/api/admin/reports/<REPORT_ID>/resolve" \
   - `Series Search` で `Series Select` を title/slug で絞り込み（Gate-10）
   - `Series Status Filter` で `draft/published/suspended` を絞り込み（Gate-11）
   - 通報カードに `series status` 表示（Gate-12）
+  - `Resolve Note` を入力して解決APIへ `note` を渡せる（Gate-13）
