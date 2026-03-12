@@ -14,6 +14,10 @@
       .report-list { display: grid; gap: 10px; }
       .report-item { border: 1px solid rgba(255,255,255,.2); border-radius: 10px; padding: 10px; background: rgba(255,255,255,.03); }
       .report-item .meta { color: var(--muted); font-size: 12px; }
+      .summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+      .summary-item { border: 1px solid rgba(255,255,255,.2); border-radius: 10px; padding: 10px; background: rgba(255,255,255,.03); }
+      .summary-item .label { color: var(--muted); font-size: 12px; }
+      .summary-item .value { font-size: 20px; font-weight: 700; }
     </style>
   </head>
   <body>
@@ -62,6 +66,24 @@
         <div id="output" class="mono"></div>
       </section>
       <section class="card grid">
+        <div class="row">
+          <label>Admin Dashboard</label>
+          <div class="summary-grid">
+            <div class="summary-item">
+              <div class="label">total reports</div>
+              <div class="value" id="summaryTotalReports">-</div>
+            </div>
+            <div class="summary-item">
+              <div class="label">open reports</div>
+              <div class="value" id="summaryOpenReports">-</div>
+            </div>
+            <div class="summary-item">
+              <div class="label">suspended series</div>
+              <div class="value" id="summarySuspendedSeries">-</div>
+            </div>
+          </div>
+          <div id="summaryStatus" class="small"></div>
+        </div>
         <div class="row">
           <label>Reports Filter</label>
           <select id="reportStatus">
