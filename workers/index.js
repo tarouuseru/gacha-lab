@@ -2196,6 +2196,18 @@ export default {
           }
         }
 
+        if (segments[2] === "series" && segments.length === 3 && request.method === "GET") {
+          const res = await supabaseRest(env, "/rest/v1/series", {
+            query:
+              "?select=id,slug,title,status,suspended_at,updated_at,owner_user_id&order=updated_at.desc&limit=100",
+          });
+          if (!res.ok) {
+            return jsonResponse({ error: "SERIES_LIST_FAILED" }, { status: 500, headers: baseHeaders });
+          }
+          const rows = await res.json();
+          return jsonResponse({ items: rows || [] }, { status: 200, headers: baseHeaders });
+        }
+
         if (segments[2] === "series" && segments[3] && segments[4] === "suspend" && request.method === "POST") {
           const seriesId = segments[3];
           const body = await parseJsonBody(request, baseHeaders);

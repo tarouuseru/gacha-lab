@@ -145,6 +145,7 @@ python -m http.server 8080
 - `POST /api/public/series/:slug/spin`
 - `POST /api/admin/series/:id/suspend`
 - `POST /api/admin/series/:id/unsuspend`（Gate-8）
+- `GET /api/admin/series`（Gate-9）
 - `POST /api/public/report`（Gate-2）
 - `GET /api/admin/reports`（Gate-2）
 - `POST /api/admin/reports/:id/resolve`（Gate-6）

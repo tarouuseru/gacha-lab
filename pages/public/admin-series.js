@@ -1,8 +1,10 @@
 const apiBase = document.getElementById("apiBase");
 const adminToken = document.getElementById("adminToken");
 const seriesId = document.getElementById("seriesId");
+const seriesSelect = document.getElementById("seriesSelect");
 const statusEl = document.getElementById("status");
 const output = document.getElementById("output");
+const loadSeriesBtn = document.getElementById("loadSeriesBtn");
 const reportStatus = document.getElementById("reportStatus");
 const loadReportsBtn = document.getElementById("loadReportsBtn");
 const reportStatusText = document.getElementById("reportStatusText");
@@ -32,6 +34,52 @@ function getAdminConfig() {
   localStorage.setItem(key.token, token);
   return { base, token };
 }
+
+function renderSeriesOptions(items) {
+  seriesSelect.innerHTML = '<option value="">(select series)</option>';
+  (items || []).forEach((item) => {
+    const option = document.createElement("option");
+    option.value = item.id;
+    const suspended = item.suspended_at ? "suspended" : item.status;
+    option.textContent = `${item.title || item.slug || item.id} (${suspended})`;
+    option.dataset.id = item.id;
+    seriesSelect.appendChild(option);
+  });
+}
+
+async function loadSeries() {
+  const { base, token } = getAdminConfig();
+  if (!base || !token) {
+    statusEl.textContent = "API_BASE / TOKEN が必要です";
+    return;
+  }
+  statusEl.textContent = "loading series...";
+  try {
+    const res = await fetch(`${base}/api/admin/series`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      statusEl.textContent = `failed: ${res.status}`;
+      output.textContent = JSON.stringify(data);
+      return;
+    }
+    renderSeriesOptions(data.items || []);
+    statusEl.textContent = `series loaded: ${(data.items || []).length}`;
+  } catch (e) {
+    statusEl.textContent = "request failed";
+    output.textContent = String(e);
+  }
+}
+
+seriesSelect.addEventListener("change", () => {
+  if (seriesSelect.value) {
+    seriesId.value = seriesSelect.value;
+  }
+});
+
+loadSeriesBtn.addEventListener("click", loadSeries);
 
 document.getElementById("suspendBtn").addEventListener("click", async () => {
   const { base, token } = getAdminConfig();
