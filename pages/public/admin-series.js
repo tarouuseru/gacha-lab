@@ -207,10 +207,12 @@ async function loadReports() {
       const resolvedAt = item.resolved_at ? new Date(item.resolved_at).toLocaleString() : "-";
       const isOpen = item.status === "open";
       const publicUrl = item.series_slug ? `${base}/s/${item.series_slug}` : null;
+      const seriesStatus = item.series_status || "-";
       el.innerHTML = `
         <div><strong>${escapeHtml(item.reason_code || "-")}</strong> (${escapeHtml(item.status || "-")})</div>
         <div>${escapeHtml(item.detail || "(no detail)")}</div>
         <div class="meta">id=${escapeHtml(item.id)} / series=${escapeHtml(item.series_id)}</div>
+        <div class="meta">series status: ${escapeHtml(seriesStatus)}</div>
         ${
           publicUrl
             ? `<div class="meta">public: <a href="${escapeHtml(publicUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(publicUrl)}</a></div>`
