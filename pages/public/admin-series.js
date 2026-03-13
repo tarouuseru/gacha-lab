@@ -8,6 +8,9 @@ const statusEl = document.getElementById("status");
 const output = document.getElementById("output");
 const loadSeriesBtn = document.getElementById("loadSeriesBtn");
 const reportStatus = document.getElementById("reportStatus");
+const reportSearch = document.getElementById("reportSearch");
+const reportReasonFilter = document.getElementById("reportReasonFilter");
+const reportSeriesStatusFilter = document.getElementById("reportSeriesStatusFilter");
 const resolveNote = document.getElementById("resolveNote");
 const loadReportsBtn = document.getElementById("loadReportsBtn");
 const reportStatusText = document.getElementById("reportStatusText");
@@ -25,6 +28,9 @@ const key = {
   seriesSearch: "admin_series_search",
   seriesStatus: "admin_series_status_filter",
   resolveNote: "admin_series_resolve_note",
+  reportSearch: "admin_report_search",
+  reportReason: "admin_report_reason_filter",
+  reportSeriesStatus: "admin_report_series_status_filter",
 };
 
 apiBase.value = localStorage.getItem(key.apiBase) || window.location.origin;
@@ -32,8 +38,12 @@ adminToken.value = localStorage.getItem(key.token) || "";
 seriesSearch.value = localStorage.getItem(key.seriesSearch) || "";
 seriesStatusFilter.value = localStorage.getItem(key.seriesStatus) || "";
 resolveNote.value = localStorage.getItem(key.resolveNote) || "resolved from admin-series UI";
+reportSearch.value = localStorage.getItem(key.reportSearch) || "";
+reportReasonFilter.value = localStorage.getItem(key.reportReason) || "";
+reportSeriesStatusFilter.value = localStorage.getItem(key.reportSeriesStatus) || "";
 
 let cachedSeries = [];
+let cachedReports = [];
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -114,6 +124,104 @@ function getAdminConfig() {
   localStorage.setItem(key.apiBase, base);
   localStorage.setItem(key.token, token);
   return { base, token };
+}
+
+function populateReportReasonOptions(items) {
+  const selected = reportReasonFilter.value || "";
+  const reasons = [...new Set((items || []).map((item) => item.reason_code).filter(Boolean))].sort();
+  reportReasonFilter.innerHTML = '<option value="">all</option>';
+  reasons.forEach((reason) => {
+    const option = document.createElement("option");
+    option.value = reason;
+    option.textContent = reason;
+    reportReasonFilter.appendChild(option);
+  });
+  if (selected && reasons.includes(selected)) {
+    reportReasonFilter.value = selected;
+  } else {
+    reportReasonFilter.value = "";
+  }
+}
+
+function applyReportFilters(items) {
+  const keyword = (reportSearch.value || "").trim().toLowerCase();
+  const reason = (reportReasonFilter.value || "").trim().toLowerCase();
+  const seriesStatus = (reportSeriesStatusFilter.value || "").trim().toLowerCase();
+  return (items || []).filter((item) => {
+    if (reason && String(item.reason_code || "").toLowerCase() !== reason) return false;
+    if (seriesStatus && String(item.series_status || "").toLowerCase() !== seriesStatus) return false;
+    if (!keyword) return true;
+    const haystack = [
+      item.id,
+      item.series_id,
+      item.series_slug,
+      item.reason_code,
+      item.detail,
+      item.status,
+      item.series_status,
+    ]
+      .map((value) => String(value || "").toLowerCase())
+      .join(" ");
+    return haystack.includes(keyword);
+  });
+}
+
+function renderReports(items, { base, token } = {}) {
+  reportList.innerHTML = "";
+  reportStatusText.textContent = `${items.length} reports`;
+  if (!items.length) {
+    reportList.innerHTML = '<div class="small">reports not found</div>';
+    return;
+  }
+  items.forEach((item) => {
+    const el = document.createElement("div");
+    el.className = "report-item";
+    const createdAt = item.created_at ? new Date(item.created_at).toLocaleString() : "-";
+    const resolvedAt = item.resolved_at ? new Date(item.resolved_at).toLocaleString() : "-";
+    const isOpen = item.status === "open";
+    const publicUrl = item.series_slug ? `${base}/s/${item.series_slug}` : null;
+    const seriesStatus = item.series_status || "-";
+    el.innerHTML = `
+      <div><strong>${escapeHtml(item.reason_code || "-")}</strong> (${escapeHtml(item.status || "-")})</div>
+      <div>${escapeHtml(item.detail || "(no detail)")}</div>
+      <div class="meta">id=${escapeHtml(item.id)} / series=${escapeHtml(item.series_id)}</div>
+      <div class="meta">series status: ${escapeHtml(seriesStatus)}</div>
+      ${
+        publicUrl
+          ? `<div class="meta">public: <a href="${escapeHtml(publicUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(publicUrl)}</a></div>`
+          : ""
+      }
+      <div class="meta">created=${escapeHtml(createdAt)} / resolved=${escapeHtml(resolvedAt)}</div>
+      <div class="modal-actions">
+        ${
+          isOpen
+            ? '<button class="btn" type="button" data-action="resolve">Resolve</button>'
+            : '<span class="small">already resolved</span>'
+        }
+      </div>
+    `;
+    if (isOpen) {
+      el.querySelector('[data-action="resolve"]')?.addEventListener("click", async () => {
+        reportStatusText.textContent = `resolving ${item.id}...`;
+        const resolveRes = await fetch(`${base}/api/admin/reports/${encodeURIComponent(item.id)}/resolve`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ note: String(resolveNote.value || "").trim() || null }),
+        });
+        if (!resolveRes.ok) {
+          const err = await resolveRes.json().catch(() => ({}));
+          reportStatusText.textContent = `resolve failed: ${resolveRes.status} ${err.error || ""}`.trim();
+          return;
+        }
+        reportStatusText.textContent = `resolved: ${item.id}`;
+        await loadReports();
+      });
+    }
+    reportList.appendChild(el);
+  });
 }
 
 function renderSeriesOptions(items) {
@@ -268,61 +376,10 @@ async function loadReports() {
       reportStatusText.textContent = `failed: ${res.status}`;
       return;
     }
-    const items = data.items || [];
-    reportStatusText.textContent = `${items.length} reports`;
-    if (!items.length) {
-      reportList.innerHTML = '<div class="small">reports not found</div>';
-      return;
-    }
-    items.forEach((item) => {
-      const el = document.createElement("div");
-      el.className = "report-item";
-      const createdAt = item.created_at ? new Date(item.created_at).toLocaleString() : "-";
-      const resolvedAt = item.resolved_at ? new Date(item.resolved_at).toLocaleString() : "-";
-      const isOpen = item.status === "open";
-      const publicUrl = item.series_slug ? `${base}/s/${item.series_slug}` : null;
-      const seriesStatus = item.series_status || "-";
-      el.innerHTML = `
-        <div><strong>${escapeHtml(item.reason_code || "-")}</strong> (${escapeHtml(item.status || "-")})</div>
-        <div>${escapeHtml(item.detail || "(no detail)")}</div>
-        <div class="meta">id=${escapeHtml(item.id)} / series=${escapeHtml(item.series_id)}</div>
-        <div class="meta">series status: ${escapeHtml(seriesStatus)}</div>
-        ${
-          publicUrl
-            ? `<div class="meta">public: <a href="${escapeHtml(publicUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(publicUrl)}</a></div>`
-            : ""
-        }
-        <div class="meta">created=${escapeHtml(createdAt)} / resolved=${escapeHtml(resolvedAt)}</div>
-        <div class="modal-actions">
-          ${
-            isOpen
-              ? '<button class="btn" type="button" data-action="resolve">Resolve</button>'
-              : '<span class="small">already resolved</span>'
-          }
-        </div>
-      `;
-      if (isOpen) {
-        el.querySelector('[data-action="resolve"]')?.addEventListener("click", async () => {
-          reportStatusText.textContent = `resolving ${item.id}...`;
-          const resolveRes = await fetch(`${base}/api/admin/reports/${encodeURIComponent(item.id)}/resolve`, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ note: String(resolveNote.value || "").trim() || null }),
-          });
-          if (!resolveRes.ok) {
-            const err = await resolveRes.json().catch(() => ({}));
-            reportStatusText.textContent = `resolve failed: ${resolveRes.status} ${err.error || ""}`.trim();
-            return;
-          }
-          reportStatusText.textContent = `resolved: ${item.id}`;
-          await loadReports();
-        });
-      }
-      reportList.appendChild(el);
-    });
+    cachedReports = data.items || [];
+    populateReportReasonOptions(cachedReports);
+    const filteredItems = applyReportFilters(cachedReports);
+    renderReports(filteredItems, { base, token });
     await loadDashboardSummary();
   } catch (e) {
     reportStatusText.textContent = `request failed: ${String(e)}`;
@@ -333,6 +390,24 @@ loadReportsBtn.addEventListener("click", loadReports);
 
 resolveNote.addEventListener("input", () => {
   localStorage.setItem(key.resolveNote, resolveNote.value || "");
+});
+
+reportSearch.addEventListener("input", () => {
+  localStorage.setItem(key.reportSearch, reportSearch.value || "");
+  const { base, token } = getAdminConfig();
+  renderReports(applyReportFilters(cachedReports), { base, token });
+});
+
+reportReasonFilter.addEventListener("change", () => {
+  localStorage.setItem(key.reportReason, reportReasonFilter.value || "");
+  const { base, token } = getAdminConfig();
+  renderReports(applyReportFilters(cachedReports), { base, token });
+});
+
+reportSeriesStatusFilter.addEventListener("change", () => {
+  localStorage.setItem(key.reportSeriesStatus, reportSeriesStatusFilter.value || "");
+  const { base, token } = getAdminConfig();
+  renderReports(applyReportFilters(cachedReports), { base, token });
 });
 
 loadDashboardSummary();
