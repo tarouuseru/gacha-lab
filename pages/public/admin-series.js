@@ -11,6 +11,7 @@ const reportStatus = document.getElementById("reportStatus");
 const reportSearch = document.getElementById("reportSearch");
 const reportReasonFilter = document.getElementById("reportReasonFilter");
 const reportSeriesStatusFilter = document.getElementById("reportSeriesStatusFilter");
+const reportSort = document.getElementById("reportSort");
 const resolveNote = document.getElementById("resolveNote");
 const loadReportsBtn = document.getElementById("loadReportsBtn");
 const reportStatusText = document.getElementById("reportStatusText");
@@ -31,6 +32,7 @@ const key = {
   reportSearch: "admin_report_search",
   reportReason: "admin_report_reason_filter",
   reportSeriesStatus: "admin_report_series_status_filter",
+  reportSort: "admin_report_sort",
 };
 
 apiBase.value = localStorage.getItem(key.apiBase) || window.location.origin;
@@ -41,6 +43,7 @@ resolveNote.value = localStorage.getItem(key.resolveNote) || "resolved from admi
 reportSearch.value = localStorage.getItem(key.reportSearch) || "";
 reportReasonFilter.value = localStorage.getItem(key.reportReason) || "";
 reportSeriesStatusFilter.value = localStorage.getItem(key.reportSeriesStatus) || "";
+reportSort.value = localStorage.getItem(key.reportSort) || "created_desc";
 
 let cachedSeries = [];
 let cachedReports = [];
@@ -164,6 +167,24 @@ function applyReportFilters(items) {
       .join(" ");
     return haystack.includes(keyword);
   });
+}
+
+function getSortableTime(item, mode) {
+  if (mode.startsWith("resolved")) {
+    return item.resolved_at ? new Date(item.resolved_at).getTime() : 0;
+  }
+  return item.created_at ? new Date(item.created_at).getTime() : 0;
+}
+
+function applyReportSort(items) {
+  const mode = reportSort.value || "created_desc";
+  const sorted = [...(items || [])];
+  sorted.sort((a, b) => {
+    const left = getSortableTime(a, mode);
+    const right = getSortableTime(b, mode);
+    return mode.endsWith("_asc") ? left - right : right - left;
+  });
+  return sorted;
 }
 
 function renderReports(items, { base, token } = {}) {
@@ -378,7 +399,7 @@ async function loadReports() {
     }
     cachedReports = data.items || [];
     populateReportReasonOptions(cachedReports);
-    const filteredItems = applyReportFilters(cachedReports);
+    const filteredItems = applyReportSort(applyReportFilters(cachedReports));
     renderReports(filteredItems, { base, token });
     await loadDashboardSummary();
   } catch (e) {
@@ -395,19 +416,25 @@ resolveNote.addEventListener("input", () => {
 reportSearch.addEventListener("input", () => {
   localStorage.setItem(key.reportSearch, reportSearch.value || "");
   const { base, token } = getAdminConfig();
-  renderReports(applyReportFilters(cachedReports), { base, token });
+  renderReports(applyReportSort(applyReportFilters(cachedReports)), { base, token });
 });
 
 reportReasonFilter.addEventListener("change", () => {
   localStorage.setItem(key.reportReason, reportReasonFilter.value || "");
   const { base, token } = getAdminConfig();
-  renderReports(applyReportFilters(cachedReports), { base, token });
+  renderReports(applyReportSort(applyReportFilters(cachedReports)), { base, token });
 });
 
 reportSeriesStatusFilter.addEventListener("change", () => {
   localStorage.setItem(key.reportSeriesStatus, reportSeriesStatusFilter.value || "");
   const { base, token } = getAdminConfig();
-  renderReports(applyReportFilters(cachedReports), { base, token });
+  renderReports(applyReportSort(applyReportFilters(cachedReports)), { base, token });
+});
+
+reportSort.addEventListener("change", () => {
+  localStorage.setItem(key.reportSort, reportSort.value || "created_desc");
+  const { base, token } = getAdminConfig();
+  renderReports(applyReportSort(applyReportFilters(cachedReports)), { base, token });
 });
 
 loadDashboardSummary();

@@ -121,6 +121,15 @@
           </select>
         </div>
         <div class="row">
+          <label>Report Sort</label>
+          <select id="reportSort">
+            <option value="created_desc">created_at desc (newest)</option>
+            <option value="created_asc">created_at asc (oldest)</option>
+            <option value="resolved_desc">resolved_at desc (newest)</option>
+            <option value="resolved_asc">resolved_at asc (oldest)</option>
+          </select>
+        </div>
+        <div class="row">
           <label>Resolve Note</label>
           <input id="resolveNote" type="text" placeholder="resolved by admin..." />
         </div>
